@@ -1,0 +1,3 @@
+-- 1. 先确认备份与 binlog（只读，见 goldendb-011）。
+-- 2. 恢复为 OMM/Insight 操作（危险，先在测试集群演练）：
+-- DANGER: OMM/Insight → 备份恢复 → 选择备份集 → 按时间点恢复到目标集群，配合 LoadServer（LDS）做数据装载；恢复前先停写并做副本。

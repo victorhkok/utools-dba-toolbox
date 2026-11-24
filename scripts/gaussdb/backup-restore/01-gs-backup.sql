@@ -1,0 +1,4 @@
+-- shell：以操作系统用户 omm 执行（openGauss 官方文档）：
+-- shell: gs_backup -t backup --backup-dir=/opt/software/gaussdb/backup_dir -h <HOSTNAME> --parameter
+-- shell: gs_backup -t backup --backup-dir=/opt/software/gaussdb/backup_dir -h <HOSTNAME> --binary --all
+-- 云上 GaussDB：备份在控制台配置（自动备份默认开启），不要在云实例上直接跑 gs_backup；

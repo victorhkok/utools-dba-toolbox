@@ -1,0 +1,5 @@
+-- shell: taosdump -h <HOST> -D <DBNAME> -o <OUTDIR>
+-- shell: taosdump -h <HOST> -A -o <OUTDIR>
+-- shell: taosdump -h <HOST> -D <DBNAME> -s -o <OUTDIR>
+-- 恢复（逻辑恢复，不覆盖已存在的表结构）：
+-- shell: taosdump -h <HOST> -i <OUTDIR>

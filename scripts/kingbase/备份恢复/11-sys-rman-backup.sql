@@ -1,0 +1,4 @@
+-- shell: sys_rman 物理备份（需先完成备份仓库初始化）
+-- shell: sys_rman init -D <数据目录> -R <备份仓库目录>
+-- shell: sys_rman backup -D <数据目录> -R <备份仓库目录> -t full
+-- shell: sys_rman backup -D <数据目录> -R <备份仓库目录> -t incr

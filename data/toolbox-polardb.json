@@ -1,0 +1,260 @@
+{
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "SELECT VERSION()",
+              "id": "polardb-001",
+              "notes": "PolarDB MySQL 版与开源 MySQL 兼容，VERSION() 返回引擎版本；小修订号（如 8.0.1.1.30）在控制台查看。依据：阿里云 PolarDB MySQL 官方文档（SQL Trace 前置条件按 8.0.1/8.0.2 修订号区分；备份参数文档按 5.7/8.0 区分）。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT VERSION() AS version, @@version_comment AS version_comment;\nSHOW GLOBAL STATUS LIKE 'Uptime';",
+              "title": "实例版本 / 引擎版本",
+              "versions": "MySQL 5.7 / 8.0"
+            },
+            {
+              "desc": "information_schema.TABLES / TABLE_CONSTRAINTS",
+              "id": "polardb-002",
+              "notes": "开源 MySQL 8.0 兼容写法，PolarDB 无专属无主键表视图；information_schema.TABLES / TABLE_CONSTRAINTS 列名按 MySQL 8.0 手册，TABLE_ROWS 为估算值。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT T.TABLE_SCHEMA, T.TABLE_NAME, T.TABLE_ROWS\nFROM information_schema.TABLES T\nLEFT JOIN information_schema.TABLE_CONSTRAINTS C\n  ON C.TABLE_SCHEMA = T.TABLE_SCHEMA AND C.TABLE_NAME = T.TABLE_NAME AND C.CONSTRAINT_TYPE = 'PRIMARY KEY'\nWHERE T.TABLE_TYPE = 'BASE TABLE'\n  AND T.TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')\n  AND C.CONSTRAINT_NAME IS NULL\nORDER BY T.TABLE_SCHEMA, T.TABLE_NAME;",
+              "title": "无主键表巡检",
+              "versions": "MySQL 5.7 / 8.0"
+            }
+          ],
+          "name": "实例"
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "SHOW GLOBAL STATUS Innodb_buffer_pool_read%",
+              "id": "polardb-003",
+              "notes": "MySQL 8.0 兼容的状态变量，PolarDB 无专属 Buffer Pool 视图；命中率需用返回的两行数值手工计算。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "-- 命中率 = 1 - Innodb_buffer_pool_reads / Innodb_buffer_pool_read_requests\nSHOW GLOBAL STATUS LIKE 'Innodb_buffer_pool_read%';",
+              "title": "InnoDB Buffer Pool 命中率",
+              "versions": "MySQL 8.0"
+            },
+            {
+              "desc": "ANALYZE TABLE",
+              "id": "polardb-004",
+              "notes": "ANALYZE TABLE 为 MySQL 8.0 兼容语法；PolarDB 官方文档未给专属统计信息收集命令。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [
+                {
+                  "desc": "库名",
+                  "name": "DB"
+                },
+                {
+                  "desc": "表名",
+                  "name": "TABLE"
+                }
+              ],
+              "risk": "谨慎",
+              "sql": "-- 1. 先确认表行数与统计信息（只读）：\nSELECT TABLE_NAME, TABLE_ROWS, UPDATE_TIME FROM information_schema.TABLES WHERE TABLE_SCHEMA = '<DB>' AND TABLE_NAME = '<TABLE>';\n-- 2. 建议非高峰执行（谨慎）：\n-- DANGER: ANALYZE TABLE `<DB>`.`<TABLE>`;",
+              "title": "统计信息收集（ANALYZE TABLE）",
+              "versions": "MySQL 8.0"
+            }
+          ],
+          "name": "性能"
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "information_schema.sql_sharing",
+              "id": "polardb-005",
+              "notes": "阿里云 PolarDB MySQL 官方文档《Use SQL Trace to track SQL execution plans》原文查询；前置条件 loose_sql_trace_type 非 OFF（默认 OFF 不记录），8.0.1 需修订版 8.0.1.1.30+，8.0.2 需 8.0.2.2.12+，SLOW_QUERY 模式 8.0.1 需 8.0.1.1.34+；5.7 无此视图。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT * FROM information_schema.sql_sharing\nWHERE TYPE = 'sql'\nORDER BY SUM_EXEC_TIME DESC\nLIMIT 10;",
+              "title": "慢SQL Top（PolarDB 专属 sql_sharing）",
+              "versions": "MySQL 8.0.1 修订版 8.0.1.1.30+ / 8.0.2 修订版 8.0.2.2.12+"
+            },
+            {
+              "desc": "EXPLAIN",
+              "id": "polardb-006",
+              "notes": "MySQL 8.0 兼容 EXPLAIN；PolarDB PostgreSQL 版对应 EXPLAIN (ANALYZE, BUFFERS)，其 pg_stat_statements 需先加 shared_preload_libraries 并 CREATE EXTENSION pg_stat_statements（官方扩展表：PG 14 对应 pg_stat_statements 1.9.2）。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [
+                {
+                  "desc": "库表名",
+                  "name": "DB.TABLE"
+                },
+                {
+                  "desc": "WHERE 条件",
+                  "name": "CONDITION"
+                }
+              ],
+              "risk": "只读",
+              "sql": "EXPLAIN SELECT * FROM <DB>.<TABLE> WHERE <CONDITION>;",
+              "title": "执行计划（EXPLAIN）",
+              "versions": "MySQL 8.0"
+            }
+          ],
+          "name": "定位"
+        }
+      ]
+    },
+    {
+      "name": "锁 / 会话",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "performance_schema.data_lock_waits / INNODB_TRX",
+              "id": "polardb-007",
+              "notes": "MySQL 8.0 写法：INFORMATION_SCHEMA.INNODB_LOCKS 在 8.0 已移除，改用 performance_schema.data_lock_waits；trx_* 列名按 MySQL 8.0 手册。PolarDB 无专属锁视图。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT R.trx_id AS waiting_trx_id, R.trx_query AS waiting_query,\n  B.trx_id AS blocking_trx_id, B.trx_query AS blocking_query,\n  R.trx_started AS waiting_since\nFROM performance_schema.data_lock_waits W\nJOIN information_schema.INNODB_TRX B ON B.trx_id = W.blocking_engine_transaction_id\nJOIN information_schema.INNODB_TRX R ON R.trx_id = W.requesting_engine_transaction_id;",
+              "title": "阻塞锁 / 长事务",
+              "versions": "MySQL 8.0"
+            },
+            {
+              "desc": "KILL",
+              "id": "polardb-008",
+              "notes": "KILL 为 MySQL 兼容语法；阿里云官方说明 PolarDB 高权限账号可 Kill 普通账号下因慢 SQL 挂起的连接；批量杀会话另有 DAS CreateKillInstanceSessionTask API（PolarDB 集群需传 NodeId）。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [
+                {
+                  "desc": "PROCESSLIST 中的线程 ID",
+                  "name": "ID"
+                }
+              ],
+              "risk": "危险",
+              "sql": "-- 1. 先确认（只读）：\nSELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, LEFT(INFO, 200) AS SQL_TEXT FROM information_schema.PROCESSLIST WHERE ID = <ID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: KILL <ID>;\n-- 只杀查询、不断连接可用：-- DANGER: KILL QUERY <ID>;",
+              "title": "杀会话（KILL）",
+              "versions": "MySQL 5.7 / 8.0"
+            }
+          ],
+          "name": "锁"
+        }
+      ]
+    },
+    {
+      "name": "空间 / 存储",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "information_schema.TABLES",
+              "id": "polardb-009",
+              "notes": "MySQL 兼容的 information_schema.TABLES 用量口径；DATA_LENGTH / INDEX_LENGTH 列名按 MySQL 8.0 手册。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS,\n  ROUND((DATA_LENGTH + INDEX_LENGTH)/1024/1024, 2) AS SIZE_MB\nFROM information_schema.TABLES\nWHERE TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')\nORDER BY (DATA_LENGTH + INDEX_LENGTH) DESC\nLIMIT 20;",
+              "title": "大表 Top",
+              "versions": "MySQL 5.7 / 8.0"
+            },
+            {
+              "desc": "information_schema.TABLES 按库汇总",
+              "id": "polardb-010",
+              "notes": "PolarDB 为计算存储分离的共享存储架构，无传统表空间 / 数据文件概念（无 DBA_DATA_FILES 式视图），存储用量以库级汇总为准；扩容与升降级在控制台操作。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT TABLE_SCHEMA AS DB_NAME,\n  ROUND(SUM(DATA_LENGTH + INDEX_LENGTH)/1024/1024, 2) AS SIZE_MB,\n  COUNT(*) AS TABLE_CNT\nFROM information_schema.TABLES\nWHERE TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')\nGROUP BY TABLE_SCHEMA\nORDER BY SIZE_MB DESC;",
+              "title": "库级存储用量",
+              "versions": "MySQL 5.7 / 8.0"
+            }
+          ],
+          "name": "空间"
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "SHOW BINARY LOGS",
+              "id": "polardb-011",
+              "notes": "阿里云官方文档：binlog 默认关闭，未开启时 SHOW BINARY LOGS 返回 You are not using binary logging；开启参数 loose_polar_log_bin=ON（会重启集群），5.7/8.0 默认保留 259200 秒（3 天）；备份本身是控制台快照（一级 ROW 快照默认开启，保留 3–14 天；二级备份为压缩离线副本），无 SQL 备份命令。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SHOW BINARY LOGS;\nSHOW GLOBAL VARIABLES LIKE 'binlog_expire_logs_seconds';",
+              "title": "备份 / Binlog 状态",
+              "versions": "MySQL 5.7 / 8.0"
+            },
+            {
+              "desc": "控制台按时间点恢复",
+              "id": "polardb-012",
+              "notes": "阿里云官方备份恢复文档：全量数据备份（快照）+ 其后物理日志备份可恢复到任意时间点；恢复到原集群会覆盖数据。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "危险",
+              "sql": "-- 1. 先确认 binlog 与备份窗口（只读）：\nSHOW BINARY LOGS;\nSHOW GLOBAL VARIABLES LIKE 'binlog_expire_logs_seconds';\n-- 2. 恢复为危险操作：PolarDB 无 SQL 恢复命令，在控制台按备份集 + 时间点恢复，优先恢复到新实例、核对后再切换；恢复前先在测试集群完整演练一次：\n-- DANGER: 控制台 > 备份恢复 > 按时间点恢复到新实例（勿直接覆盖原集群）；",
+              "title": "PITR 恢复演练清单",
+              "versions": "MySQL 5.7 / 8.0"
+            }
+          ],
+          "name": "备份"
+        }
+      ]
+    },
+    {
+      "name": "高可用 / 复制",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "read_only / PROCESSLIST",
+              "id": "polardb-013",
+              "notes": "PolarDB 只读节点共享主节点存储、通过 redo 物理复制同步，无开源 MySQL 式 binlog 主从复制，不要对只读节点跑 SHOW SLAVE STATUS / SHOW REPLICA STATUS；主备延迟以控制台监控为准，本条仅用 read_only=ON 确认当前连的是只读节点。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT VERSION() AS version;\nSHOW GLOBAL VARIABLES LIKE 'read_only';\nSHOW FULL PROCESSLIST;",
+              "title": "主备 / 只读节点状态",
+              "versions": "MySQL 5.7 / 8.0"
+            }
+          ],
+          "name": "复制"
+        }
+      ]
+    },
+    {
+      "name": "用户 / 安全",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "mysql.user / SHOW GRANTS",
+              "id": "polardb-014",
+              "notes": "mysql.user 为 MySQL 8.0 兼容系统表；PolarDB 分高权限账号与普通账号，高权限账号可管理普通账号连接。需在 PolarDB MySQL 8.0 实测核对。",
+              "params": [
+                {
+                  "desc": "用户名",
+                  "name": "USER"
+                },
+                {
+                  "desc": "主机",
+                  "name": "HOST"
+                }
+              ],
+              "risk": "只读",
+              "sql": "SELECT USER, HOST FROM mysql.user ORDER BY USER, HOST;\nSHOW GRANTS FOR '<USER>'@'<HOST>';",
+              "title": "用户列表与权限",
+              "versions": "MySQL 5.7 / 8.0"
+            }
+          ],
+          "name": "用户"
+        }
+      ]
+    }
+  ],
+  "id": "polardb",
+  "name": "PolarDB",
+  "note": "阿里云 PolarDB：本文件 14 条均为 MySQL 版（除非另有注明）；PostgreSQL 版 100% 兼容 PG 11/14/15/16/17，pg_stat_statements 等需 CREATE EXTENSION，见 polardb-006 notes。",
+  "versions": "MySQL 5.7 / 8.0；PostgreSQL 11/14/15/16/17"
+}

@@ -1,7 +1,7 @@
 {
-  "version": "0.2-draft",
+  "version": "0.3",
   "updated": "2026-11-24",
-  "total_items": 215,
+  "total_items": 327,
   "structure": "数据库 > 大类 > 小类 > 脚本 | 适用版本 | 风险（只读/谨慎/危险）",
   "databases": [
     {
@@ -2254,6 +2254,2089 @@
                   "risk": "只读",
                   "desc": "二期",
                   "id": "common-011"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kingbase",
+      "name": "金仓 KingBaseES",
+      "versions": "KES V9 / V8.6",
+      "note": "国产化迁移方向，PG 兼容",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "实例状态 / 版本",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "version(), sys_stat_activity",
+                  "params": [],
+                  "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（KingbaseES V9）；version() 与 sys_stat_activity（pid/state/query/wait_event_type）见 kingbase.com.cn 性能视图文章。sys_stat_activity 的 sys_ 前缀为 KES V9 命名，pg_stat_activity 为 PG 原生命名，二者同义。未在真实环境跑过，需在 KES V9 实测核对。",
+                  "id": "kingbase-001"
+                },
+                {
+                  "title": "无效对象清单",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "DBA_OBJECTS（Oracle 兼容模式）",
+                  "params": [],
+                  "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/。仅 Oracle 兼容模式提供 DBA_OBJECTS，PG 兼容模式无此视图；DBA_OBJECTS 列名与 STATUS 取值需在 KES V9 Oracle 兼容模式实测核对。",
+                  "id": "kingbase-002"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "参数与缓存",
+              "items": [
+                {
+                  "title": "缓存命中率 / 内存",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "sys_stat_database",
+                  "params": [],
+                  "notes": "依据：kingbase.com.cn 性能视图文章（sys_stat_database：事务数、块读写数）与 PG 兼容的 sys_stat_database 列名。blks_hit/blks_read 列名需在 KES V9 实测核对。",
+                  "id": "kingbase-003"
+                },
+                {
+                  "title": "统计信息收集",
+                  "versions": "V9+",
+                  "risk": "谨慎",
+                  "desc": "ANALYZE",
+                  "params": [
+                    {
+                      "name": "SCHEMA",
+                      "desc": "模式名"
+                    },
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "依据：kingbase.com.cn 性能视图文章（sys_stat_user_tables 的 last_analyze / n_live_tup 用于判断是否需 ANALYZE/VACUUM）与 PG 兼容语法。ANALYZE 语法按 PG 兼容模式，需在 KES V9 实测核对。",
+                  "id": "kingbase-004"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top（sys_stat_statements）",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "sys_stat_statements",
+                  "params": [],
+                  "notes": "依据：kingbase.com.cn《KES 如何配置 sys_stat_statements》与性能调优白皮书：需 kingbase.conf 配 shared_preload_libraries='sys_stat_statements' 并重启，再 CREATE EXTENSION sys_stat_statements；列 query/calls/total_time/mean_time/rows/shared_blks_hit/shared_blks_read 见该文。未启用扩展时视图无数据，需在 KES V9 实测核对。",
+                  "id": "kingbase-005"
+                },
+                {
+                  "title": "执行计划（EXPLAIN ANALYZE）",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "EXPLAIN ANALYZE",
+                  "params": [
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "表名"
+                    },
+                    {
+                      "name": "CONDITION",
+                      "desc": "WHERE 条件"
+                    }
+                  ],
+                  "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（PG 兼容语法）。注意 EXPLAIN ANALYZE 会真实执行 SQL，写操作改用不带 ANALYZE 的 EXPLAIN；输出格式需在 KES V9 实测核对。",
+                  "id": "kingbase-006"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁 / 会话",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "sys_locks / sys_stat_activity",
+                  "params": [],
+                  "notes": "依据：kingbase.com.cn 性能视图文章（sys_locks 视图 + sys_stat_activity 关联分析阻塞链，wait_event_type='Lock' 为瓶颈信号）。查询结构为 PG 标准阻塞查询的 sys_ 前缀写法，sys_locks 列名（locktype/relation/granted）需在 KES V9 实测核对；pg_locks/pg_stat_activity 为 PG 原生命名。",
+                  "id": "kingbase-007"
+                },
+                {
+                  "title": "杀会话",
+                  "versions": "V9+",
+                  "risk": "危险",
+                  "desc": "pg_terminate_backend",
+                  "params": [
+                    {
+                      "name": "PID",
+                      "desc": "会话进程 ID"
+                    }
+                  ],
+                  "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（PG 兼容函数）。pg_terminate_backend 为 PG 兼容函数名，需在 KES V9 实测核对；杀会话前务必确认业务影响，优先用 pg_cancel_backend 取消当前查询。",
+                  "id": "kingbase-008"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "表空间大小一览",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "sys_tablespace / sys_tablespace_size",
+                  "params": [],
+                  "notes": "依据：金仓运维命令清单（sys_tablespace + sys_tablespace_size）与官方文档中心 https://help.kingbase.com.cn/。KES 未提供 DBA_FREE_SPACE 式空闲视图，本条只给各表空间已用大小，使用率需结合操作系统 df 或数据目录大小估算，需在 KES V9 实测核对。",
+                  "id": "kingbase-009"
+                },
+                {
+                  "title": "大表 Top",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "sys_total_relation_size",
+                  "params": [],
+                  "notes": "依据：金仓运维命令清单（sys_total_relation_size + sys_class relkind='r'）与官方文档中心 https://help.kingbase.com.cn/。sys_total_relation_size 含表 + 索引 + TOAST，需在 KES V9 实测核对。",
+                  "id": "kingbase-010"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "物理备份（sys_rman 全量 / 增量）",
+                  "versions": "V9+",
+                  "risk": "谨慎",
+                  "desc": "sys_rman",
+                  "params": [
+                    {
+                      "name": "数据目录",
+                      "desc": "实例数据目录路径"
+                    },
+                    {
+                      "name": "备份仓库目录",
+                      "desc": "sys_rman 备份仓库 repo_path"
+                    }
+                  ],
+                  "notes": "依据：kingbase.com.cn《金仓数据库备份恢复：从原理到实战》（sys_rman init/backup -t full/-t incr，关键参数 repo_path/stanza_name/compress_type）与官方文档中心 https://help.kingbase.com.cn/。备份前确认归档已开启（archive_mode=on）与仓库磁盘余量；具体参数需按 KES V9 手册核对，需在 KES V9 实测核对。",
+                  "id": "kingbase-011"
+                },
+                {
+                  "title": "时间点恢复演练清单",
+                  "versions": "V9+",
+                  "risk": "危险",
+                  "desc": "sys_rman restore / PITR",
+                  "params": [
+                    {
+                      "name": "数据目录",
+                      "desc": "实例数据目录路径"
+                    },
+                    {
+                      "name": "备份仓库目录",
+                      "desc": "sys_rman 备份仓库 repo_path"
+                    }
+                  ],
+                  "notes": "依据：kingbase.com.cn《金仓数据库备份恢复：从原理到实战》（恢复前停库、sys_rman restore、结合 WAL 做 PITR）与官方文档中心 https://help.kingbase.com.cn/。restore 的完整参数与 PITR 步骤需按 KES V9 手册核对，未在真实环境跑过，需在 KES V9 实测核对。",
+                  "id": "kingbase-012"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "流复制",
+              "items": [
+                {
+                  "title": "主备 / 流复制状态",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "sys_stat_replication",
+                  "params": [],
+                  "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（PG 兼容的流复制视图）。sys_stat_replication 列名（sent_lsn/write_lsn/flush_lsn/replay_lsn）与备库函数 pg_last_xact_replay_timestamp 需在 KES V9 实测核对；pg_stat_replication 为 PG 原生命名。",
+                  "id": "kingbase-013"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "用户与角色列表",
+                  "versions": "V9+",
+                  "risk": "只读",
+                  "desc": "pg_roles",
+                  "params": [],
+                  "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（PG 兼容模式系统目录）。pg_roles 列名需在 KES V9 实测核对；Oracle 兼容模式下用户查询改用 DBA_USERS，两种模式不可混用。",
+                  "id": "kingbase-014"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "SELECT VERSION()",
+                  "id": "polardb-001",
+                  "notes": "PolarDB MySQL 版与开源 MySQL 兼容，VERSION() 返回引擎版本；小修订号（如 8.0.1.1.30）在控制台查看。依据：阿里云 PolarDB MySQL 官方文档（SQL Trace 前置条件按 8.0.1/8.0.2 修订号区分；备份参数文档按 5.7/8.0 区分）。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "实例版本 / 引擎版本",
+                  "versions": "MySQL 5.7 / 8.0"
+                },
+                {
+                  "desc": "information_schema.TABLES / TABLE_CONSTRAINTS",
+                  "id": "polardb-002",
+                  "notes": "开源 MySQL 8.0 兼容写法，PolarDB 无专属无主键表视图；information_schema.TABLES / TABLE_CONSTRAINTS 列名按 MySQL 8.0 手册，TABLE_ROWS 为估算值。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "无主键表巡检",
+                  "versions": "MySQL 5.7 / 8.0"
+                }
+              ],
+              "name": "实例"
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "SHOW GLOBAL STATUS Innodb_buffer_pool_read%",
+                  "id": "polardb-003",
+                  "notes": "MySQL 8.0 兼容的状态变量，PolarDB 无专属 Buffer Pool 视图；命中率需用返回的两行数值手工计算。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "InnoDB Buffer Pool 命中率",
+                  "versions": "MySQL 8.0"
+                },
+                {
+                  "desc": "ANALYZE TABLE",
+                  "id": "polardb-004",
+                  "notes": "ANALYZE TABLE 为 MySQL 8.0 兼容语法；PolarDB 官方文档未给专属统计信息收集命令。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [
+                    {
+                      "desc": "库名",
+                      "name": "DB"
+                    },
+                    {
+                      "desc": "表名",
+                      "name": "TABLE"
+                    }
+                  ],
+                  "risk": "谨慎",
+                  "title": "统计信息收集（ANALYZE TABLE）",
+                  "versions": "MySQL 8.0"
+                }
+              ],
+              "name": "性能"
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "information_schema.sql_sharing",
+                  "id": "polardb-005",
+                  "notes": "阿里云 PolarDB MySQL 官方文档《Use SQL Trace to track SQL execution plans》原文查询；前置条件 loose_sql_trace_type 非 OFF（默认 OFF 不记录），8.0.1 需修订版 8.0.1.1.30+，8.0.2 需 8.0.2.2.12+，SLOW_QUERY 模式 8.0.1 需 8.0.1.1.34+；5.7 无此视图。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "慢SQL Top（PolarDB 专属 sql_sharing）",
+                  "versions": "MySQL 8.0.1 修订版 8.0.1.1.30+ / 8.0.2 修订版 8.0.2.2.12+"
+                },
+                {
+                  "desc": "EXPLAIN",
+                  "id": "polardb-006",
+                  "notes": "MySQL 8.0 兼容 EXPLAIN；PolarDB PostgreSQL 版对应 EXPLAIN (ANALYZE, BUFFERS)，其 pg_stat_statements 需先加 shared_preload_libraries 并 CREATE EXTENSION pg_stat_statements（官方扩展表：PG 14 对应 pg_stat_statements 1.9.2）。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [
+                    {
+                      "desc": "库表名",
+                      "name": "DB.TABLE"
+                    },
+                    {
+                      "desc": "WHERE 条件",
+                      "name": "CONDITION"
+                    }
+                  ],
+                  "risk": "只读",
+                  "title": "执行计划（EXPLAIN）",
+                  "versions": "MySQL 8.0"
+                }
+              ],
+              "name": "定位"
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "performance_schema.data_lock_waits / INNODB_TRX",
+                  "id": "polardb-007",
+                  "notes": "MySQL 8.0 写法：INFORMATION_SCHEMA.INNODB_LOCKS 在 8.0 已移除，改用 performance_schema.data_lock_waits；trx_* 列名按 MySQL 8.0 手册。PolarDB 无专属锁视图。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "阻塞锁 / 长事务",
+                  "versions": "MySQL 8.0"
+                },
+                {
+                  "desc": "KILL",
+                  "id": "polardb-008",
+                  "notes": "KILL 为 MySQL 兼容语法；阿里云官方说明 PolarDB 高权限账号可 Kill 普通账号下因慢 SQL 挂起的连接；批量杀会话另有 DAS CreateKillInstanceSessionTask API（PolarDB 集群需传 NodeId）。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [
+                    {
+                      "desc": "PROCESSLIST 中的线程 ID",
+                      "name": "ID"
+                    }
+                  ],
+                  "risk": "危险",
+                  "title": "杀会话（KILL）",
+                  "versions": "MySQL 5.7 / 8.0"
+                }
+              ],
+              "name": "锁"
+            }
+          ]
+        },
+        {
+          "name": "空间 / 存储",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "information_schema.TABLES",
+                  "id": "polardb-009",
+                  "notes": "MySQL 兼容的 information_schema.TABLES 用量口径；DATA_LENGTH / INDEX_LENGTH 列名按 MySQL 8.0 手册。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "大表 Top",
+                  "versions": "MySQL 5.7 / 8.0"
+                },
+                {
+                  "desc": "information_schema.TABLES 按库汇总",
+                  "id": "polardb-010",
+                  "notes": "PolarDB 为计算存储分离的共享存储架构，无传统表空间 / 数据文件概念（无 DBA_DATA_FILES 式视图），存储用量以库级汇总为准；扩容与升降级在控制台操作。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "库级存储用量",
+                  "versions": "MySQL 5.7 / 8.0"
+                }
+              ],
+              "name": "空间"
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "SHOW BINARY LOGS",
+                  "id": "polardb-011",
+                  "notes": "阿里云官方文档：binlog 默认关闭，未开启时 SHOW BINARY LOGS 返回 You are not using binary logging；开启参数 loose_polar_log_bin=ON（会重启集群），5.7/8.0 默认保留 259200 秒（3 天）；备份本身是控制台快照（一级 ROW 快照默认开启，保留 3–14 天；二级备份为压缩离线副本），无 SQL 备份命令。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "备份 / Binlog 状态",
+                  "versions": "MySQL 5.7 / 8.0"
+                },
+                {
+                  "desc": "控制台按时间点恢复",
+                  "id": "polardb-012",
+                  "notes": "阿里云官方备份恢复文档：全量数据备份（快照）+ 其后物理日志备份可恢复到任意时间点；恢复到原集群会覆盖数据。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "危险",
+                  "title": "PITR 恢复演练清单",
+                  "versions": "MySQL 5.7 / 8.0"
+                }
+              ],
+              "name": "备份"
+            }
+          ]
+        },
+        {
+          "name": "高可用 / 复制",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "read_only / PROCESSLIST",
+                  "id": "polardb-013",
+                  "notes": "PolarDB 只读节点共享主节点存储、通过 redo 物理复制同步，无开源 MySQL 式 binlog 主从复制，不要对只读节点跑 SHOW SLAVE STATUS / SHOW REPLICA STATUS；主备延迟以控制台监控为准，本条仅用 read_only=ON 确认当前连的是只读节点。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "主备 / 只读节点状态",
+                  "versions": "MySQL 5.7 / 8.0"
+                }
+              ],
+              "name": "复制"
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "mysql.user / SHOW GRANTS",
+                  "id": "polardb-014",
+                  "notes": "mysql.user 为 MySQL 8.0 兼容系统表；PolarDB 分高权限账号与普通账号，高权限账号可管理普通账号连接。需在 PolarDB MySQL 8.0 实测核对。",
+                  "params": [
+                    {
+                      "desc": "用户名",
+                      "name": "USER"
+                    },
+                    {
+                      "desc": "主机",
+                      "name": "HOST"
+                    }
+                  ],
+                  "risk": "只读",
+                  "title": "用户列表与权限",
+                  "versions": "MySQL 5.7 / 8.0"
+                }
+              ],
+              "name": "用户"
+            }
+          ]
+        }
+      ],
+      "id": "polardb",
+      "name": "PolarDB",
+      "note": "阿里云 PolarDB：本文件 14 条均为 MySQL 版（除非另有注明）；PostgreSQL 版 100% 兼容 PG 11/14/15/16/17，pg_stat_statements 等需 CREATE EXTENSION，见 polardb-006 notes。",
+      "versions": "MySQL 5.7 / 8.0；PostgreSQL 11/14/15/16/17"
+    },
+    {
+      "id": "goldendb",
+      "name": "GoldenDB",
+      "versions": "GoldenDB V6 分布式/集中式/混合部署",
+      "note": "中兴 GoldenDB V6：DN 为 MySQL 内核，CN/GTM/管理节点分布式架构；官方白皮书见 zte.com.cn，未找到公开 SQL 手册，未在真实环境跑过，见各条 notes",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "实例版本 / 运行状态",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "VERSION() / SHOW GLOBAL STATUS",
+                  "params": [],
+                  "notes": "依据：GoldenDB V6 技术白皮书（中兴通讯官方），DN 基于 MySQL 内核、兼容 MySQL 语法与协议。经 CN（计算节点/DBProxy）接入时返回的是 CN 侧逻辑版本还是 DN 版本、状态口径，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-001"
+                },
+                {
+                  "title": "分片表定义检查",
+                  "versions": "GoldenDB V6 分布式",
+                  "risk": "只读",
+                  "desc": "SHOW CREATE TABLE",
+                  "params": [
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "依据：GoldenDB V6 技术白皮书，支持 Range/Hash/List 三种水平分片规则、DUPLICATE 复制表、分片之上再做本地分区。SHOW CREATE TABLE 用于核对分片键与分片规则是否与设计一致，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-002"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "InnoDB 缓冲池命中率",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "performance_schema.global_status",
+                  "params": [],
+                  "notes": "依据：GoldenDB DN 为 MySQL 内核，performance_schema.global_status 为 MySQL 标准视图。该查询应在 DN 上执行，CN 上不一定透传，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-003"
+                },
+                {
+                  "title": "统计信息收集（ANALYZE TABLE）",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "谨慎",
+                  "desc": "ANALYZE TABLE",
+                  "params": [
+                    {
+                      "name": "SCHEMA",
+                      "desc": "库名"
+                    },
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "依据：GoldenDB DN 兼容 MySQL 语法。分布式表 ANALYZE 是否按分片逐个执行、是否阻塞业务，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-004"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top（performance_schema 摘要）",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "events_statements_summary_by_digest",
+                  "params": [],
+                  "notes": "依据：GoldenDB DN 为 MySQL 内核，performance_schema 为 MySQL 标准视图。经 CN 看到的是 CN 侧聚合还是单 DN 的摘要、是否需逐 DN 查，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-005"
+                },
+                {
+                  "title": "执行计划（EXPLAIN）",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "EXPLAIN",
+                  "params": [
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "表名"
+                    },
+                    {
+                      "name": "CONDITION",
+                      "desc": "WHERE 条件"
+                    }
+                  ],
+                  "notes": "依据：GoldenDB DN 兼容 MySQL 语法，EXPLAIN 为 MySQL 标准命令。CN 会把 SQL 下发到各 DN 再汇总结果，跨分片 JOIN 的计划以 CN 侧为准，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-006"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁/会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁 / 长事务",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "information_schema.innodb_trx",
+                  "params": [],
+                  "notes": "依据：GoldenDB DN 为 MySQL 内核，information_schema.innodb_trx 为 MySQL 标准视图。MySQL 8.0 已移除 information_schema.innodb_lock_waits，改查 performance_schema.data_lock_waits；DN 内核版本不同写法不同，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-007"
+                },
+                {
+                  "title": "杀会话（KILL）",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "危险",
+                  "desc": "KILL",
+                  "params": [
+                    {
+                      "name": "THREAD_ID",
+                      "desc": "会话 ID（PROCESSLIST 的 ID 列）"
+                    }
+                  ],
+                  "notes": "依据：GoldenDB DN 兼容 MySQL 语法，KILL 为 MySQL 标准命令。跨分片事务的会话可能涉及多个 DN 与 GTM 协调，杀会话前务必确认业务影响，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-008"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间/存储",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "库空间使用率",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "information_schema.TABLES",
+                  "params": [],
+                  "notes": "依据：GoldenDB DN 为 MySQL 内核，information_schema.TABLES 为 MySQL 标准视图。经 CN 汇总还是单 DN 口径，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-009"
+                },
+                {
+                  "title": "分片数据分布 / 倾斜检查",
+                  "versions": "GoldenDB V6 分布式",
+                  "risk": "只读",
+                  "desc": "分片键 GROUP BY 计数",
+                  "params": [
+                    {
+                      "name": "SHARDKEY",
+                      "desc": "分片键列"
+                    },
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "分片表名"
+                    }
+                  ],
+                  "notes": "依据：GoldenDB V6 技术白皮书，数据按分片键分布在不同分片组，支持在线新增分片与数据重分布。单分片行数悬殊即为倾斜，需重分布；分布口径需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-010"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "备份 / Binlog 状态检查",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "SHOW BINARY LOGS / SHOW MASTER STATUS",
+                  "params": [],
+                  "notes": "依据：GoldenDB V6 技术白皮书，支持逻辑备份与物理备份、按时间点恢复，备份通过 OMM/Insight 或 MySQL 生态工具执行，无单条 SQL 可查备份集；SHOW BINARY LOGS 只能看 binlog 清单，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-011"
+                },
+                {
+                  "title": "时间点恢复演练清单",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "危险",
+                  "desc": "OMM/Insight 恢复（无 SQL）",
+                  "params": [],
+                  "notes": "依据：GoldenDB V6 技术白皮书，支持按时间点恢复，LoadServer（LDS）负责数据装载与迁移，运维通过 Insight/OMM 执行。生产恢复前务必先在测试集群演练，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-012"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用/容灾",
+          "subcategories": [
+            {
+              "name": "容灾",
+              "items": [
+                {
+                  "title": "分片组主备复制状态",
+                  "versions": "GoldenDB V6 分布式",
+                  "risk": "只读",
+                  "desc": "SHOW REPLICA STATUS / SHOW SLAVE STATUS",
+                  "params": [],
+                  "notes": "依据：GoldenDB V6 技术白皮书，每个分片组（DBGroup）由一主多备组成，备机以强同步方式复制主库日志，主库故障时分片组内自动选举切换。SQL 只能在直连 DN 时看复制状态，CN 上不可见；主备切换走 Insight/OMM，不要直接在 DN 上改，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-013"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户/安全",
+          "subcategories": [
+            {
+              "name": "安全",
+              "items": [
+                {
+                  "title": "用户列表 / 权限",
+                  "versions": "GoldenDB V6 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "mysql.user / SHOW GRANTS",
+                  "params": [
+                    {
+                      "name": "USER",
+                      "desc": "用户名"
+                    },
+                    {
+                      "name": "HOST",
+                      "desc": "主机（% 或 IP）"
+                    }
+                  ],
+                  "notes": "依据：GoldenDB DN 为 MySQL 内核，mysql.user 为 MySQL 标准系统表。白皮书：一套物理集群可划分 sys_cluster 系统租户与多个业务租户，各租户元数据隔离；租户级账号以 OMM 为准，需在 GoldenDB V6 实测核对。",
+                  "id": "goldendb-014"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tdsql",
+      "name": "TDSQL",
+      "versions": "TDSQL MySQL版 5.7/8.0 分布式；TDSQL PostgreSQL版 分布式/集中式",
+      "note": "腾讯云 TDSQL：MySQL版（DCDB）分布式 + PostgreSQL版分布式/集中式；官方文档见 cloud.tencent.com/document/product/1042，未在真实环境跑过，见各条 notes",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "实例版本 / 运行状态",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "VERSION() / SHOW GLOBAL STATUS",
+                  "params": [],
+                  "notes": "依据：腾讯云官方《TDSQL for MySQL Overview》，TDSQL 为分布式数据库，主从 HA 架构，兼容常用 MySQL 语法。分布式实例经 SQL 引擎/TProxy 接入，看到的是逻辑库版本与状态，各 SET（分片组）需逐个核对，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-001"
+                },
+                {
+                  "title": "分片分布 / 倾斜检查",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "分片键 GROUP BY 计数",
+                  "params": [
+                    {
+                      "name": "SHARDKEY",
+                      "desc": "分表键（建表时指定的 shardkey 列）"
+                    },
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "分片表名"
+                    }
+                  ],
+                  "notes": "依据：腾讯云官方概述，分片按 shardkey 取模打散到各 SET；单分片行数悬殊即为倾斜。GROUP BY 汇总口径（逻辑层汇总还是单分片）取决于接入方式，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-002"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "InnoDB 缓冲池命中率",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "performance_schema.global_status",
+                  "params": [],
+                  "notes": "依据：TDSQL 兼容 MySQL，InnoDB 为主要引擎；performance_schema.global_status 在 MySQL 5.7+ 可用。分布式下该值是当前接入 SET 的，逐 SET 对比才有意义，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-003"
+                },
+                {
+                  "title": "统计信息收集（ANALYZE TABLE）",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "谨慎",
+                  "desc": "ANALYZE TABLE",
+                  "params": [
+                    {
+                      "name": "SCHEMA",
+                      "desc": "库名"
+                    },
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "依据：TDSQL 兼容 MySQL 语法。分布式表 ANALYZE 是否按分片逐个执行、是否阻塞业务，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-004"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top（performance_schema 摘要）",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "events_statements_summary_by_digest",
+                  "params": [],
+                  "notes": "依据：TDSQL 兼容 MySQL，performance_schema 为 MySQL 标准视图。需 performance_schema 开启；分布式下摘要是逻辑层聚合还是单 SET 的，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-005"
+                },
+                {
+                  "title": "慢SQL Top（PG版 pg_stat_statements）",
+                  "versions": "TDSQL PostgreSQL版 分布式/集中式",
+                  "risk": "只读",
+                  "desc": "pg_stat_statements",
+                  "params": [],
+                  "notes": "依据：TDSQL PostgreSQL版操作指南（腾讯云官方），该版本分分布式/集中式，CN/DN/GTM 架构。pg_stat_statements 需在 shared_preload_libraries 中加载；列名 total_exec_time 为 PG 13+，低版本为 total_time，需在 TDSQL PostgreSQL版实测核对。",
+                  "id": "tdsql-006"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁/会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁 / 长事务",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "information_schema.innodb_trx",
+                  "params": [],
+                  "notes": "依据：TDSQL 兼容 MySQL，information_schema.innodb_trx 为 MySQL 标准视图。MySQL 8.0 已移除 information_schema.innodb_lock_waits，改查 performance_schema.data_lock_waits；5.7 与 8.0 内核写法不同，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-007"
+                },
+                {
+                  "title": "杀会话（KILL）",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "危险",
+                  "desc": "KILL",
+                  "params": [
+                    {
+                      "name": "THREAD_ID",
+                      "desc": "会话 ID（PROCESSLIST 的 ID 列）"
+                    }
+                  ],
+                  "notes": "依据：TDSQL 兼容 MySQL，KILL 为 MySQL 标准命令。托管实例一般不提供 super user 权限，KILL 他人会话需相应权限；分布式下 KILL 只作用于当前接入的SET/节点，跨分片会话需逐节点处理，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-008"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间/存储",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "库空间使用率",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "information_schema.TABLES",
+                  "params": [],
+                  "notes": "依据：TDSQL 兼容 MySQL，information_schema.TABLES 为 MySQL 标准视图。分布式下汇总口径（逻辑层汇总还是单分片）取决于接入方式，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-009"
+                },
+                {
+                  "title": "大表 Top",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "information_schema.TABLES",
+                  "params": [],
+                  "notes": "依据：TDSQL 兼容 MySQL，information_schema.TABLES 为 MySQL 标准视图。分片倾斜另见 tdsql-002；单表过大时结合分片键重分布，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-010"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "备份 / Binlog 状态检查",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "SHOW BINARY LOGS / SHOW MASTER STATUS",
+                  "params": [],
+                  "notes": "依据：腾讯云官方《Backup Mode》，TDSQL MySQL版支持全量备份与基于 binlog 的增量备份，保留期默认 7 天（1-365 天可配），备份与回档在控制台操作，无单条 SQL 可查备份集；SHOW BINARY LOGS 只能看 binlog 清单，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-011"
+                },
+                {
+                  "title": "时间点恢复 / 回档演练清单",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式；PG版",
+                  "risk": "危险",
+                  "desc": "控制台回档（无 SQL）",
+                  "params": [],
+                  "notes": "依据：腾讯云官方《Backup Mode》（MySQL版全量+增量、按时间点回档）与《TDSQL PostgreSQL版 操作指南》（只支持整实例回档生成新实例）。生产回档前务必先停写并做副本，需在 TDSQL 实测核对。",
+                  "id": "tdsql-012"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用/容灾",
+          "subcategories": [
+            {
+              "name": "容灾",
+              "items": [
+                {
+                  "title": "主备复制延迟",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "SHOW REPLICA STATUS / SHOW SLAVE STATUS",
+                  "params": [],
+                  "notes": "依据：腾讯云官方概述，TDSQL 默认主从 HA 架构；SHOW REPLICA STATUS 为 MySQL 8.0+ 写法，5.7 用 SHOW SLAVE STATUS。看 Seconds_Behind_Master、IO/SQL 线程状态；分布式下各 SET 复制状态需逐 SET 查，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-013"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户/安全",
+          "subcategories": [
+            {
+              "name": "安全",
+              "items": [
+                {
+                  "title": "用户列表 / 权限",
+                  "versions": "TDSQL MySQL版 5.7/8.0 分布式",
+                  "risk": "只读",
+                  "desc": "mysql.user / SHOW GRANTS",
+                  "params": [
+                    {
+                      "name": "USER",
+                      "desc": "用户名"
+                    },
+                    {
+                      "name": "HOST",
+                      "desc": "主机（% 或 IP）"
+                    }
+                  ],
+                  "notes": "依据：TDSQL 兼容 MySQL，mysql.user 为 MySQL 标准系统表。云上托管实例一般不提供 super user 权限（TDSQL PostgreSQL版操作指南明确；MySQL版以控制台账号管理为准），不要修改默认账号信息，需在 TDSQL MySQL版实测核对。",
+                  "id": "tdsql-014"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "SELECT version()",
+                  "id": "gaussdb-001",
+                  "notes": "openGauss 官方运维手册与华为云 GaussDB 文档均以 SELECT version() 查版本；集中式与分布式共用此查询。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "实例版本",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                }
+              ],
+              "name": "实例"
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "pv_session_memory_detail()",
+                  "id": "gaussdb-002",
+                  "notes": "openGauss 官方运维手册原文：查询占用内存最大的会话；usedsize 列名按手册推断。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "会话内存 Top",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                },
+                {
+                  "desc": "ANALYZE / pg_stat_user_tables",
+                  "id": "gaussdb-003",
+                  "notes": "openGauss 官方运维手册：ANALYZE 收集统计信息、VACUUM 回收空间并更新统计信息；第 1 步同时可作未分析表（无效对象）巡检，pg_stat_user_tables.last_analyze 列名按 PG 兼容推断。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [
+                    {
+                      "desc": "模式与表名",
+                      "name": "SCHEMA.TABLE"
+                    }
+                  ],
+                  "risk": "谨慎",
+                  "title": "统计信息收集（ANALYZE）",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                }
+              ],
+              "name": "性能"
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "dbe_perf.statement / SUMMARY_STATEMENT",
+                  "id": "gaussdb-004",
+                  "notes": "华为云 GaussDB 集中式开发指南：dbe_perf.statement（SUMMARY_STATEMENT）取主节点归一化 SQL 全量信息，total_elapse_time 单位微秒；查询需 sysadmin 或 monitor admin 权限，受 enable_resource_track / instr_unique_sql_count 控制；分布式用 PGXC_SQL_COUNT 看节点级计数；慢 SQL 明细另以控制台慢 SQL 为准。需在 GaussDB 集中式 V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "归一化 SQL Top（dbe_perf.statement）",
+                  "versions": "集中式 V2.0-8.x（dbe_perf.statement）；分布式用 PGXC_SQL_COUNT"
+                },
+                {
+                  "desc": "EXPLAIN",
+                  "id": "gaussdb-005",
+                  "notes": "openGauss 官方运维手册：用 EXPLAIN 看执行计划；EXPLAIN ANALYZE 会真实执行语句，本条只给不执行的 EXPLAIN。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [
+                    {
+                      "desc": "模式与表名",
+                      "name": "SCHEMA.TABLE"
+                    },
+                    {
+                      "desc": "WHERE 条件",
+                      "name": "CONDITION"
+                    }
+                  ],
+                  "risk": "只读",
+                  "title": "执行计划（EXPLAIN）",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                }
+              ],
+              "name": "定位"
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "pg_locks / pg_thread_wait_status",
+                  "id": "gaussdb-006",
+                  "notes": "openGauss 官方运维手册原文：SELECT * FROM pg_locks 与 pg_thread_wait_status 查等锁状态；pg_locks 列名较多，本条用 SELECT * 不展开列名。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "阻塞锁 / 等锁线程",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                },
+                {
+                  "desc": "pg_terminate_backend",
+                  "id": "gaussdb-007",
+                  "notes": "华为云 GaussDB 开发指南《查询系统目录》原文：先 SET track_activities=on 再查 pg_stat_activity，用 pg_terminate_backend(pid) 结束会话；普通用户只能看到自己的会话。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [
+                    {
+                      "desc": "pg_stat_activity 中的会话 PID",
+                      "name": "PID"
+                    }
+                  ],
+                  "risk": "危险",
+                  "title": "杀会话（pg_terminate_backend）",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                }
+              ],
+              "name": "锁"
+            }
+          ]
+        },
+        {
+          "name": "空间 / 存储",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "pg_tablespace / pg_tablespace_size",
+                  "id": "gaussdb-008",
+                  "notes": "openGauss 官方文档原文：pg_tablespace_size('example') 返回字节数；使用率 = pg_tablespace_size / 表空间所在目录磁盘大小，无单条 SQL 直接出百分比；自带 pg_default 与 pg_global 两个表空间。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [
+                    {
+                      "desc": "表空间名",
+                      "name": "TABLESPACE"
+                    }
+                  ],
+                  "risk": "只读",
+                  "title": "表空间使用率",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                },
+                {
+                  "desc": "pg_table_size / pg_tables",
+                  "id": "gaussdb-009",
+                  "notes": "openGauss 官方运维手册原文函数 pg_table_size('table_name') 与 pg_database_size('database_name')；pg_tables 为华为云文档示例中使用的系统目录；schemaname || '.' || tablename 的传参形式按 PG 兼容推断。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "大表 Top",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                }
+              ],
+              "name": "空间"
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "gs_backup",
+                  "id": "gaussdb-010",
+                  "notes": "openGauss 物理备份与恢复文档原文 gs_backup 语法；云上 GaussDB 备份恢复走控制台（自动备份 + 手动备份，恢复支持实例级 / 库级 / 表级），命令参数细节需实测核对。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [
+                    {
+                      "desc": "主机名",
+                      "name": "HOSTNAME"
+                    },
+                    {
+                      "desc": "备份目录",
+                      "name": "backup-dir"
+                    }
+                  ],
+                  "risk": "谨慎",
+                  "title": "物理备份（gs_backup）",
+                  "versions": "集中式 / 分布式（自建 openGauss 内核）；云上 GaussDB 以控制台备份为准"
+                },
+                {
+                  "desc": "控制台恢复到指定时间点",
+                  "id": "gaussdb-011",
+                  "notes": "华为云 GaussDB 用户指南《恢复到指定时间点》原文：仅 V2.0-2.1 之后版本支持，恢复目标新实例须与原实例同大版本、同部署形态；openGauss 内核另有 recovery.conf + recovery_target_time 的 PITR 流程。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "危险",
+                  "title": "PITR 恢复演练清单",
+                  "versions": "集中式 / 分布式 V2.0-2.1+"
+                }
+              ],
+              "name": "备份"
+            }
+          ]
+        },
+        {
+          "name": "高可用 / 复制",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "pg_stat_replication",
+                  "id": "gaussdb-012",
+                  "notes": "华为云 GaussDB 分布式开发指南 PG_STAT_REPLICATION 视图原文列名：state（startup/catchup/streaming/backup/stopping）、sync_state（async/sync/potential/quorum）；在主 DN 上查询；集中式 1 主 2 备、分布式各 DN 组 1 主 2 备 Paxos。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "主备同步状态",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                },
+                {
+                  "desc": "pgxc_node",
+                  "id": "gaussdb-013",
+                  "notes": "PGXC_NODE 为 GaussDB 分布式系统目录（CN/DN 节点清单）；集中式无 CN 节点、查不到或报错即为集中式形态，本条用 SELECT * 不展开列名；分布键倾斜另查 pgxc_class。需在 GaussDB 分布式 V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "分布式节点列表（pgxc_node）",
+                  "versions": "分布式 V2.0-8.x（集中式无此视图）"
+                }
+              ],
+              "name": "复制"
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "items": [
+                {
+                  "desc": "gs_user",
+                  "id": "gaussdb-014",
+                  "notes": "华为云 GaussDB 开发指南《查询系统目录》原文：GS_USER 看全部用户与 USESYSID / 权限；输出示例含 usename、usesysid、usecreatedb、usesuper、usecatupd、userepl、passwd（本条不查 passwd 列）；普通用户查询结果受限。需在 GaussDB V2.0-8.x 实测核对。",
+                  "params": [],
+                  "risk": "只读",
+                  "title": "用户列表（gs_user）",
+                  "versions": "集中式 / 分布式 V2.0-8.x"
+                }
+              ],
+              "name": "用户"
+            }
+          ]
+        }
+      ],
+      "id": "gaussdb",
+      "name": "GaussDB",
+      "note": "华为云 GaussDB（openGauss 内核）：集中式 1 主多备、分布式 CN+DN+GTM；慢 SQL 以控制台为准、SQL 侧用 dbe_perf.statement；备份恢复以控制台为准，gs_backup 仅用于自建内核。",
+      "versions": "集中式 / 分布式 V2.0-8.x"
+    },
+    {
+      "id": "tdengine",
+      "name": "TDengine",
+      "versions": "3.x（社区版 / 企业版）",
+      "note": "时序数据库，一设备一表 + 超级表（STable）模型；全备为企业版功能",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "集群",
+              "items": [
+                {
+                  "title": "版本与数据节点状态",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "SELECT SERVER_VERSION() / SHOW DNODES",
+                  "params": [],
+                  "notes": "依据：TDengine 官方架构文档（dnode 为 taosd 进程、mnode 管元数据与协调）。SERVER_VERSION() 列名与 SHOW DNODES 输出列需在 3.x 实测核对。",
+                  "id": "tdengine-001"
+                },
+                {
+                  "title": "库 / 超级表清单",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "SHOW DATABASES / SHOW STABLES",
+                  "params": [
+                    {
+                      "name": "DBNAME",
+                      "desc": "数据库名"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方文档 SHOW 语法。SHOW STABLES / SHOW TABLES 需先 USE 指定库；输出列需在 3.x 实测核对。",
+                  "id": "tdengine-002"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能/写入",
+          "subcategories": [
+            {
+              "name": "查询",
+              "items": [
+                {
+                  "title": "正在执行的查询",
+                  "versions": "3.4+",
+                  "risk": "只读",
+                  "desc": "SHOW QUERIES",
+                  "params": [],
+                  "notes": "依据：TDengine 3.4.1.0 Release Notes（SHOW QUERIES 显示执行进度）。输出列（如 query id / 执行时长）需在 3.4.x 实测核对。",
+                  "id": "tdengine-003"
+                },
+                {
+                  "title": "超级表下采样聚合（INTERVAL）",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "INTERVAL / PARTITION BY tbname",
+                  "params": [
+                    {
+                      "name": "STABLE",
+                      "desc": "超级表名"
+                    },
+                    {
+                      "name": "MEASURE_COL",
+                      "desc": "度量列名，如 current"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方文档的时序扩展语法（INTERVAL 时间窗口、PARTITION BY tbname 按子表分组）。_wstart 为窗口起始时间伪列，需在 3.x 实测核对。",
+                  "id": "tdengine-004"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢查询",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢查询定位（SHOW QUERIES + EXPLAIN）",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "SHOW QUERIES / EXPLAIN",
+                  "params": [
+                    {
+                      "name": "STABLE",
+                      "desc": "超级表名"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方文档（SHOW QUERIES、EXPLAIN）。TDengine 的慢查询日志阈值与输出位置由服务端配置决定，本条未编参数名，需在 3.x 实测核对 slowLog 相关配置。",
+                  "id": "tdengine-005"
+                },
+                {
+                  "title": "最新数据到达检查（LAST_ROW）",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "LAST_ROW",
+                  "params": [
+                    {
+                      "name": "STABLE",
+                      "desc": "超级表名"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方文档的 LAST_ROW 函数（取每子表最新一行，常用于判断设备断流）。PARTITION BY tbname + LAST_ROW 的组合写法需在 3.x 实测核对。",
+                  "id": "tdengine-006"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间/压缩",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "库空间与压缩率",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "information_schema.ins_databases",
+                  "params": [],
+                  "notes": "依据：TDengine 官方压缩指南（SELECT db_name, compression_ratio FROM information_schema.ins_databases；data_size / storage_size 同文）。列名需在 3.x 实测核对。",
+                  "id": "tdengine-007"
+                },
+                {
+                  "title": "虚拟组与子表分布",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "SHOW VGROUPS / SHOW TABLES",
+                  "params": [
+                    {
+                      "name": "DBNAME",
+                      "desc": "数据库名"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方架构文档（vgroup 为一组互为副本的 vnode）。SHOW VGROUPS 输出列需在 3.x 实测核对。",
+                  "id": "tdengine-008"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "保留策略",
+          "subcategories": [
+            {
+              "name": "保留",
+              "items": [
+                {
+                  "title": "库保留参数查看",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "SHOW CREATE DATABASE",
+                  "params": [
+                    {
+                      "name": "DBNAME",
+                      "desc": "数据库名"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方 Databases 文档（KEEP / DURATION / COMP 等建库参数）。SHOW CREATE DATABASE 的输出格式需在 3.x 实测核对。",
+                  "id": "tdengine-009"
+                },
+                {
+                  "title": "修改保留时长与压缩",
+                  "versions": "3.x",
+                  "risk": "谨慎",
+                  "desc": "ALTER DATABASE KEEP / COMP",
+                  "params": [
+                    {
+                      "name": "DBNAME",
+                      "desc": "数据库名"
+                    },
+                    {
+                      "name": "KEEP",
+                      "desc": "保留时长，如 365d"
+                    },
+                    {
+                      "name": "COMP",
+                      "desc": "压缩级别 0/1/2"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方 Databases 文档（KEEP 默认 3650 天、须 >= 3 倍 DURATION；COMP 0 不压缩、1 一级、2 二级）。ALTER DATABASE 支持 KEEP / COMP 的写法需在 3.x 实测核对；缩短 KEEP 会删除数据，务必先确认。",
+                  "id": "tdengine-010"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "逻辑备份（taosdump）",
+                  "versions": "3.x",
+                  "risk": "谨慎",
+                  "desc": "taosdump",
+                  "params": [
+                    {
+                      "name": "HOST",
+                      "desc": "TDengine 服务地址"
+                    },
+                    {
+                      "name": "DBNAME",
+                      "desc": "数据库名"
+                    },
+                    {
+                      "name": "OUTDIR",
+                      "desc": "备份输出目录（须为空或不存在）"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方 taosdump 文档（-D 指定库、-A 全库、-s 仅元数据、-i 恢复；3.4.2+ 支持 binary/parquet 格式）。taosdump 为逻辑备份，不含集群拓扑与配置。",
+                  "id": "tdengine-011"
+                },
+                {
+                  "title": "企业版全备与恢复",
+                  "versions": "3.x 企业版",
+                  "risk": "危险",
+                  "desc": "CREATE FULL BACKUP / taosd --restore",
+                  "params": [
+                    {
+                      "name": "DNODE_ID",
+                      "desc": "数据节点 ID"
+                    },
+                    {
+                      "name": "BACKUP_PATH",
+                      "desc": "备份路径"
+                    },
+                    {
+                      "name": "BACKUP_CHAIN_PATH",
+                      "desc": "备份链路径"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方备份恢复文档（CREATE FULL BACKUP / SHOW BACKUPS / taosd --restore）。全备与恢复为企业版功能，社区版不可用；恢复仅还原 mnode/vnode/snode 数据，恢复前务必先停写并做副本，需在 3.x 企业版实测核对。",
+                  "id": "tdengine-012"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "集群",
+              "items": [
+                {
+                  "title": "节点与副本状态",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "SHOW DNODES / SHOW MNODES / SHOW VGROUPS",
+                  "params": [
+                    {
+                      "name": "DBNAME",
+                      "desc": "数据库名"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方架构文档（mnode 多副本 Raft、vgroup 副本组）与 Databases 文档（REPLICA 参数：社区版为 1 或 3，2 副本为 3.3.0.0+ 企业版）。副本数以 SHOW CREATE DATABASE 输出为准，需在 3.x 实测核对。",
+                  "id": "tdengine-013"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户/安全",
+          "subcategories": [
+            {
+              "name": "用户",
+              "items": [
+                {
+                  "title": "用户与授权",
+                  "versions": "3.x",
+                  "risk": "谨慎",
+                  "desc": "SHOW USERS / CREATE USER",
+                  "params": [
+                    {
+                      "name": "USERNAME",
+                      "desc": "用户名"
+                    },
+                    {
+                      "name": "PASSWORD",
+                      "desc": "密码"
+                    },
+                    {
+                      "name": "DBNAME",
+                      "desc": "数据库名"
+                    }
+                  ],
+                  "notes": "依据：TDengine 官方文档（SHOW USERS / CREATE USER）。GRANT 的权限关键字与对象写法需在 3.x 实测核对；切勿在脚本里留真实密码。",
+                  "id": "tdengine-014"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "yashandb",
+      "name": "崖山 YashanDB",
+      "versions": "YashanDB 23.2",
+      "note": "国产化迁移方向，Oracle 兼容",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "实例状态 / 版本",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "V$INSTANCE, V$VERSION",
+                  "params": [],
+                  "notes": "依据：YashanDB 管理员手册 v23.2.2.0（SELECT status FROM V$INSTANCE；实例启停章节）与官方文档中心 https://doc.yashandb.com/。V$INSTANCE/V$VERSION 列名以手册为准，SELECT * 避免编列名；需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-001"
+                },
+                {
+                  "title": "无效对象清单",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "DBA_OBJECTS",
+                  "params": [],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（DBA_OBJECTS 属 Oracle 兼容 DBA 视图清单）与官方文档中心 https://doc.yashandb.com/。DBA_OBJECTS 在 YashanDB 中的列名与 STATUS 取值需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-002"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "缓存命中率 / 内存",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "V$SYSSTAT",
+                  "params": [],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（V$SYSSTAT 属 Oracle 兼容动态视图清单）与官方文档中心 https://doc.yashandb.com/。V$SYSSTAT 统计项名称为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对；精确列名未在手册检索中逐项确认，故用 LIKE 匹配。",
+                  "id": "yashandb-003"
+                },
+                {
+                  "title": "统计信息收集",
+                  "versions": "23.2+",
+                  "risk": "谨慎",
+                  "desc": "DBMS_STATS",
+                  "params": [
+                    {
+                      "name": "SCHEMA",
+                      "desc": "模式名"
+                    },
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（Oracle 兼容语法与 DBA_TABLES 视图）与官方文档中心 https://doc.yashandb.com/。DBMS_STATS.GATHER_TABLE_STATS 在 YashanDB 中的可用性与参数需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-004"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top（V$SQL）",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "V$SQL",
+                  "params": [],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（V$SQL 属 Oracle 兼容动态视图清单）与官方文档中心 https://doc.yashandb.com/。V$SQL 列名（SQL_TEXT/ELAPSED_TIME/EXECUTIONS）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-005"
+                },
+                {
+                  "title": "执行计划（EXPLAIN PLAN）",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "EXPLAIN PLAN / DBMS_XPLAN",
+                  "params": [
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "表名"
+                    },
+                    {
+                      "name": "CONDITION",
+                      "desc": "WHERE 条件"
+                    }
+                  ],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（Oracle 兼容 SQL 语法）与官方文档中心 https://doc.yashandb.com/。DBMS_XPLAN.DISPLAY 在 YashanDB 中的可用性需在 YashanDB 23.2 实测核对；EXPLAIN PLAN 本身不执行 SQL。",
+                  "id": "yashandb-006"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁 / 会话",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "V$LOCKED_OBJECT / V$SESSION",
+                  "params": [],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（V$LOCKED_OBJECT、V$SESSION、V$LOCK 属 Oracle 兼容动态视图清单）与官方文档中心 https://doc.yashandb.com/。V$LOCKED_OBJECT 列名（SESSION_ID/OBJECT_ID/LOCKED_MODE）与 V$SESSION 列名（SID/SERIAL#/USERNAME/STATUS）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-007"
+                },
+                {
+                  "title": "杀会话",
+                  "versions": "23.2+",
+                  "risk": "危险",
+                  "desc": "ALTER SYSTEM KILL SESSION",
+                  "params": [
+                    {
+                      "name": "SID",
+                      "desc": "会话 SID"
+                    },
+                    {
+                      "name": "SERIAL#",
+                      "desc": "会话 SERIAL#"
+                    }
+                  ],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（V$SESSION 列 SID/SERIAL#，Oracle 兼容语法）与官方文档中心 https://doc.yashandb.com/。ALTER SYSTEM KILL SESSION 语法为 Oracle 兼容写法，需在 YashanDB 23.2 实测核对；杀会话前务必确认业务影响。",
+                  "id": "yashandb-008"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "表空间使用率",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "DBA_DATA_FILES / DBA_FREE_SPACE",
+                  "params": [],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（DBA_TABLESPACES/DBA_DATA_FILES 属 Oracle 兼容 DBA 视图清单）与官方文档中心 https://doc.yashandb.com/。DBA_FREE_SPACE 列名需在 YashanDB 23.2 实测核对；>85% 预警。空闲字节用 SUM 聚合，避免重复计算。",
+                  "id": "yashandb-009"
+                },
+                {
+                  "title": "大表 Top",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "DBA_SEGMENTS",
+                  "params": [],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（Oracle 兼容 DBA 视图）与官方文档中心 https://doc.yashandb.com/。DBA_SEGMENTS 列名（OWNER/SEGMENT_NAME/SEGMENT_TYPE/BYTES）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-010"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "备份 / 归档状态",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "V$DATABASE / V$ARCHIVED_LOG",
+                  "params": [],
+                  "notes": "依据：YashanDB 管理员手册 v23.2.2.0（V$DATABASE 的 log_mode 字段表示归档模式，ARCHIVELOG/NOARCHIVELOG；默认归档路径由 ARCHIVE_LOCAL_DEST 控制）与官方文档中心 https://doc.yashandb.com/。V$ARCHIVED_LOG 属 Oracle 兼容动态视图清单，列名（SEQUENCE#/FIRST_TIME/ARCHIVED）需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-011"
+                },
+                {
+                  "title": "时间点恢复演练清单",
+                  "versions": "23.2+",
+                  "risk": "危险",
+                  "desc": "PITR 演练",
+                  "params": [
+                    {
+                      "name": "恢复目标时间",
+                      "desc": "PITR 目标时间点"
+                    }
+                  ],
+                  "notes": "依据：YashanDB 管理员手册 v23.2.2.0（归档模式 + redo 归档支持 PITR；故障恢复靠历史全量备份 + 归档 redo 重做）与官方文档中心 https://doc.yashandb.com/。备份恢复工具的具体命令名与参数未在本次官方手册检索中逐项确认，故本条只给清单、不编命令，需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-012"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "主备",
+              "items": [
+                {
+                  "title": "主备状态 / 复制延迟",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "V$DATABASE / V$ARCHIVE_DEST_STATUS",
+                  "params": [],
+                  "notes": "依据：YashanDB 管理员手册 v23.2.2.0（V$DATABASE 的 DATABASE_ROLE/PROTECTION_MODE 字段示例，主备模式必看）与 Oracle 兼容性说明（V$ARCHIVE_DEST、V$ARCHIVE_DEST_STATUS、V$ARCHIVE_GAP 属兼容动态视图清单），官方文档中心 https://doc.yashandb.com/。V$ARCHIVE_DEST_STATUS 列名（DEST_ID/STATUS/TYPE/ERROR）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-013"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "用户列表与权限",
+                  "versions": "23.2+",
+                  "risk": "只读",
+                  "desc": "DBA_USERS / DBA_SYS_PRIVS",
+                  "params": [
+                    {
+                      "name": "USER",
+                      "desc": "用户名"
+                    }
+                  ],
+                  "notes": "依据：YashanDB 与 Oracle 兼容性说明（Oracle 兼容 DBA 视图）与官方文档中心 https://doc.yashandb.com/。DBA_USERS/DBA_SYS_PRIVS 列名（USERNAME/ACCOUNT_STATUS/DEFAULT_TABLESPACE/CREATED、GRANTEE/PRIVILEGE）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+                  "id": "yashandb-014"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "opengauss",
+      "name": "openGauss",
+      "versions": "5.0 / 6.0 LTS",
+      "note": "华为开源，PostgreSQL 内核，PG 兼容视图与 openGauss 专属视图（GS_WLM_*）并存",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "版本 / 集群状态（gs_om）",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "SELECT version() / gs_om -t status",
+                  "params": [],
+                  "notes": "依据：openGauss 官方手册 Routine Maintenance / gs_om。gs_om 须以 OS 用户 omm 执行；cluster_state 为 Normal 表示集群正常。",
+                  "id": "opengauss-001"
+                },
+                {
+                  "title": "库大小与当前连接数",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "pg_database_size / pg_stat_activity",
+                  "params": [],
+                  "notes": "依据：官方手册 Routine Maintenance（pg_database_size / SELECT count(*) FROM pg_stat_activity）。pg_stat_activity 沿用开源 PG 的视图名与列名；openGauss 中 pid 为线程 ID，且普通用户只能看到自己的会话状态。",
+                  "id": "opengauss-002"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "大表 / 大索引 Top",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "pg_total_relation_size",
+                  "params": [],
+                  "notes": "依据：pg_total_relation_size / pg_table_size / pg_indexes_size 为 openGauss 沿用开源 PG 的函数，需在 openGauss 6.0 实测核对 pg_statio_user_tables 的列名。",
+                  "id": "opengauss-003"
+                },
+                {
+                  "title": "统计信息收集（ANALYZE）",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "谨慎",
+                  "desc": "ANALYZE",
+                  "params": [
+                    {
+                      "name": "SCHEMA",
+                      "desc": "模式名"
+                    },
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "依据：ANALYZE 与 pg_stat_user_tables 沿用开源 PG 语法；官方手册 Routine Maintenance 建议用 VACUUM 回收空间并更新统计信息。n_mod_since_analyze 列名需在 openGauss 6.0 实测核对。",
+                  "id": "opengauss-004"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top（GS_WLM_SESSION_INFO）",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "GS_WLM_SESSION_INFO",
+                  "params": [
+                    {
+                      "name": "THRESHOLD_MS",
+                      "desc": "慢查询阈值（毫秒），如 1000"
+                    }
+                  ],
+                  "notes": "依据：官方手册 GS_WLM_SESSION_INFO 列名 duration（毫秒）、dbname、username、start_time、finish_time、status、query 均已核对。注意：该视图仅 sysadmin 可查，且仅在 postgres 库可查；GS_SLOW_QUERY_INFO 在 5.0 已废弃，不要用；enable_resource_record 须为 on 才会定期入库，需在 6.0 实测核对。",
+                  "id": "opengauss-005"
+                },
+                {
+                  "title": "执行计划（EXPLAIN）",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "EXPLAIN",
+                  "params": [
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "表名"
+                    },
+                    {
+                      "name": "CONDITION",
+                      "desc": "WHERE 条件"
+                    }
+                  ],
+                  "notes": "依据：官方手册 Routine Maintenance 建议用 EXPLAIN 查看执行计划。只给不执行的 EXPLAIN；EXPLAIN ANALYZE 会真实执行，勿对写操作使用，需在 openGauss 6.0 实测核对。",
+                  "id": "opengauss-006"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁/会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁 / 等待会话",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "pg_locks / pg_stat_activity",
+                  "params": [],
+                  "notes": "依据：官方手册 Analyzing the Status of a Query Statement（waiting = true）与 Routine Maintenance（SELECT * FROM pg_locks）。pg_locks / pg_stat_activity 沿用开源 PG；openGauss 的 waiting 列与 PG 行为一致，需在 6.0 实测核对。",
+                  "id": "opengauss-007"
+                },
+                {
+                  "title": "强制终止会话",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "危险",
+                  "desc": "pg_terminate_backend",
+                  "params": [
+                    {
+                      "name": "PID",
+                      "desc": "会话线程 ID（pg_stat_activity.pid）"
+                    }
+                  ],
+                  "notes": "依据：官方手册 Forcibly Terminating a Session（SELECT pg_terminate_backend(<pid>)）。openGauss 的 pid 是线程 ID（bigint），不是 OS 进程号；杀会话前务必确认业务影响。",
+                  "id": "opengauss-008"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间/存储",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "表空间使用情况",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "pg_tablespace_size",
+                  "params": [],
+                  "notes": "依据：pg_tablespace_size / pg_tablespace 沿用开源 PG。pg_tablespace_location 列名与返回值需在 openGauss 6.0 实测核对。",
+                  "id": "opengauss-009"
+                },
+                {
+                  "title": "死元组 / 膨胀检查",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "pg_stat_user_tables",
+                  "params": [],
+                  "notes": "依据：pg_stat_user_tables 沿用开源 PG；官方手册 Routine Maintenance 建议用 VACUUM 回收空间。死元组占比高时先在测试环境验证 VACUUM 影响，列名需在 openGauss 6.0 实测核对。",
+                  "id": "opengauss-010"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "逻辑备份（gs_dump）",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "谨慎",
+                  "desc": "gs_dump",
+                  "params": [
+                    {
+                      "name": "DBNAME",
+                      "desc": "数据库名"
+                    },
+                    {
+                      "name": "PORT",
+                      "desc": "端口（默认 26000）"
+                    },
+                    {
+                      "name": "OUTFILE",
+                      "desc": "备份输出文件"
+                    }
+                  ],
+                  "notes": "依据：官方手册 Routine Maintenance 与备份恢复总览（gs_dump / gs_dumpall / gs_restore）。文本格式恢复慢、大库慎用；备份前确认磁盘余量。",
+                  "id": "opengauss-011"
+                },
+                {
+                  "title": "物理备份与恢复（gs_probackup）",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "危险",
+                  "desc": "gs_probackup",
+                  "params": [
+                    {
+                      "name": "BACKUP_PATH",
+                      "desc": "备份目录"
+                    },
+                    {
+                      "name": "INSTANCE",
+                      "desc": "备份实例名"
+                    }
+                  ],
+                  "notes": "依据：官方手册 gs_probackup（支持全量/增量/定期/远程备份、PTRACK 增量需 enable_cbm_tracking=on）。init 与 add-instance 的完整参数需按手册核对；恢复前务必先停写并做副本，需在 6.0 实测核对。",
+                  "id": "opengauss-012"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用/容灾",
+          "subcategories": [
+            {
+              "name": "主备",
+              "items": [
+                {
+                  "title": "主备复制状态与延迟",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "只读",
+                  "desc": "pg_stat_replication / gs_om",
+                  "params": [],
+                  "notes": "依据：官方手册 PG_STAT_REPLICATION（state / sync_state / sender_sent_location / receiver_replay_location）与 gs_om。openGauss 沿用 PG 的 pg_stat_replication 视图名，但 state 取值（catchup/streaming）与开源 PG 略有不同，需在 6.0 实测核对。",
+                  "id": "opengauss-013"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户/安全",
+          "subcategories": [
+            {
+              "name": "用户",
+              "items": [
+                {
+                  "title": "用户与权限",
+                  "versions": "5.0 / 6.0 LTS",
+                  "risk": "谨慎",
+                  "desc": "pg_roles / CREATE USER",
+                  "params": [
+                    {
+                      "name": "USERNAME",
+                      "desc": "用户名"
+                    },
+                    {
+                      "name": "PASSWORD",
+                      "desc": "密码（符合复杂度要求）"
+                    }
+                  ],
+                  "notes": "依据：pg_roles 沿用开源 PG。CREATE USER / GRANT 语法沿用 PG，但 openGauss 默认密码复杂度策略与 PG 不同，弱密码会被拒绝，密码规则需在 6.0 实测核对；切勿在脚本里留真实密码。",
+                  "id": "opengauss-014"
                 }
               ]
             }

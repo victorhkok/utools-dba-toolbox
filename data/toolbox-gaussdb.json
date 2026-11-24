@@ -1,0 +1,261 @@
+{
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "SELECT version()",
+              "id": "gaussdb-001",
+              "notes": "openGauss 官方运维手册与华为云 GaussDB 文档均以 SELECT version() 查版本；集中式与分布式共用此查询。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT version();",
+              "title": "实例版本",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            }
+          ],
+          "name": "实例"
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "pv_session_memory_detail()",
+              "id": "gaussdb-002",
+              "notes": "openGauss 官方运维手册原文：查询占用内存最大的会话；usedsize 列名按手册推断。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT * FROM pv_session_memory_detail() ORDER BY usedsize DESC LIMIT 10;",
+              "title": "会话内存 Top",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            },
+            {
+              "desc": "ANALYZE / pg_stat_user_tables",
+              "id": "gaussdb-003",
+              "notes": "openGauss 官方运维手册：ANALYZE 收集统计信息、VACUUM 回收空间并更新统计信息；第 1 步同时可作未分析表（无效对象）巡检，pg_stat_user_tables.last_analyze 列名按 PG 兼容推断。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [
+                {
+                  "desc": "模式与表名",
+                  "name": "SCHEMA.TABLE"
+                }
+              ],
+              "risk": "谨慎",
+              "sql": "-- 1. 先确认未分析的表（只读）：\nSELECT schemaname, tablename, last_analyze, n_live_tup FROM pg_stat_user_tables WHERE last_analyze IS NULL ORDER BY n_live_tup DESC LIMIT 20;\n-- 2. 建议非高峰执行（谨慎）：\n-- DANGER: ANALYZE <SCHEMA>.<TABLE>;",
+              "title": "统计信息收集（ANALYZE）",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            }
+          ],
+          "name": "性能"
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "dbe_perf.statement / SUMMARY_STATEMENT",
+              "id": "gaussdb-004",
+              "notes": "华为云 GaussDB 集中式开发指南：dbe_perf.statement（SUMMARY_STATEMENT）取主节点归一化 SQL 全量信息，total_elapse_time 单位微秒；查询需 sysadmin 或 monitor admin 权限，受 enable_resource_track / instr_unique_sql_count 控制；分布式用 PGXC_SQL_COUNT 看节点级计数；慢 SQL 明细另以控制台慢 SQL 为准。需在 GaussDB 集中式 V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT unique_sql_id, query, n_calls,\n  total_elapse_time / 1000 AS total_ms,\n  total_elapse_time / NULLIF(n_calls, 0) / 1000 AS avg_ms\nFROM dbe_perf.statement\nORDER BY total_elapse_time DESC\nLIMIT 10;",
+              "title": "归一化 SQL Top（dbe_perf.statement）",
+              "versions": "集中式 V2.0-8.x（dbe_perf.statement）；分布式用 PGXC_SQL_COUNT"
+            },
+            {
+              "desc": "EXPLAIN",
+              "id": "gaussdb-005",
+              "notes": "openGauss 官方运维手册：用 EXPLAIN 看执行计划；EXPLAIN ANALYZE 会真实执行语句，本条只给不执行的 EXPLAIN。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [
+                {
+                  "desc": "模式与表名",
+                  "name": "SCHEMA.TABLE"
+                },
+                {
+                  "desc": "WHERE 条件",
+                  "name": "CONDITION"
+                }
+              ],
+              "risk": "只读",
+              "sql": "EXPLAIN SELECT * FROM <SCHEMA>.<TABLE> WHERE <CONDITION>;",
+              "title": "执行计划（EXPLAIN）",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            }
+          ],
+          "name": "定位"
+        }
+      ]
+    },
+    {
+      "name": "锁 / 会话",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "pg_locks / pg_thread_wait_status",
+              "id": "gaussdb-006",
+              "notes": "openGauss 官方运维手册原文：SELECT * FROM pg_locks 与 pg_thread_wait_status 查等锁状态；pg_locks 列名较多，本条用 SELECT * 不展开列名。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "-- 未授权的锁（只读）：\nSELECT * FROM pg_locks WHERE NOT granted;\n-- 正在等锁的线程（只读）：\nSELECT * FROM pg_thread_wait_status WHERE wait_status = 'acquire lock';",
+              "title": "阻塞锁 / 等锁线程",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            },
+            {
+              "desc": "pg_terminate_backend",
+              "id": "gaussdb-007",
+              "notes": "华为云 GaussDB 开发指南《查询系统目录》原文：先 SET track_activities=on 再查 pg_stat_activity，用 pg_terminate_backend(pid) 结束会话；普通用户只能看到自己的会话。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [
+                {
+                  "desc": "pg_stat_activity 中的会话 PID",
+                  "name": "PID"
+                }
+              ],
+              "risk": "危险",
+              "sql": "-- 1. 先确认（只读，华为云官方示例）：\nSELECT datname, usename, state, pid FROM pg_stat_activity WHERE pid = <PID>;\n-- 2. 确认无误后再执行（危险，华为云官方示例）：\n-- DANGER: SELECT pg_terminate_backend(<PID>);",
+              "title": "杀会话（pg_terminate_backend）",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            }
+          ],
+          "name": "锁"
+        }
+      ]
+    },
+    {
+      "name": "空间 / 存储",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "pg_tablespace / pg_tablespace_size",
+              "id": "gaussdb-008",
+              "notes": "openGauss 官方文档原文：pg_tablespace_size('example') 返回字节数；使用率 = pg_tablespace_size / 表空间所在目录磁盘大小，无单条 SQL 直接出百分比；自带 pg_default 与 pg_global 两个表空间。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [
+                {
+                  "desc": "表空间名",
+                  "name": "TABLESPACE"
+                }
+              ],
+              "risk": "只读",
+              "sql": "-- 1. 列出全部表空间（只读）：\nSELECT spcname FROM pg_tablespace;\n-- 2. 单个表空间已用字节（只读，单位字节）：\nSELECT pg_tablespace_size('<TABLESPACE>') AS size_bytes;",
+              "title": "表空间使用率",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            },
+            {
+              "desc": "pg_table_size / pg_tables",
+              "id": "gaussdb-009",
+              "notes": "openGauss 官方运维手册原文函数 pg_table_size('table_name') 与 pg_database_size('database_name')；pg_tables 为华为云文档示例中使用的系统目录；schemaname || '.' || tablename 的传参形式按 PG 兼容推断。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT schemaname, tablename,\n  pg_table_size(schemaname || '.' || tablename) / 1024 / 1024 AS size_mb\nFROM pg_tables\nWHERE schemaname NOT IN ('pg_catalog', 'information_schema')\nORDER BY size_mb DESC\nLIMIT 20;",
+              "title": "大表 Top",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            }
+          ],
+          "name": "空间"
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "gs_backup",
+              "id": "gaussdb-010",
+              "notes": "openGauss 物理备份与恢复文档原文 gs_backup 语法；云上 GaussDB 备份恢复走控制台（自动备份 + 手动备份，恢复支持实例级 / 库级 / 表级），命令参数细节需实测核对。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [
+                {
+                  "desc": "主机名",
+                  "name": "HOSTNAME"
+                },
+                {
+                  "desc": "备份目录",
+                  "name": "backup-dir"
+                }
+              ],
+              "risk": "谨慎",
+              "sql": "-- shell：以操作系统用户 omm 执行（openGauss 官方文档）：\n-- shell: gs_backup -t backup --backup-dir=/opt/software/gaussdb/backup_dir -h <HOSTNAME> --parameter\n-- shell: gs_backup -t backup --backup-dir=/opt/software/gaussdb/backup_dir -h <HOSTNAME> --binary --all\n-- 云上 GaussDB：备份在控制台配置（自动备份默认开启），不要在云实例上直接跑 gs_backup；",
+              "title": "物理备份（gs_backup）",
+              "versions": "集中式 / 分布式（自建 openGauss 内核）；云上 GaussDB 以控制台备份为准"
+            },
+            {
+              "desc": "控制台恢复到指定时间点",
+              "id": "gaussdb-011",
+              "notes": "华为云 GaussDB 用户指南《恢复到指定时间点》原文：仅 V2.0-2.1 之后版本支持，恢复目标新实例须与原实例同大版本、同部署形态；openGauss 内核另有 recovery.conf + recovery_target_time 的 PITR 流程。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "危险",
+              "sql": "-- 1. 先确认实例版本与形态（只读）：\nSELECT version();\n-- 2. 恢复为危险操作：华为云官方文档要求在控制台操作——备份 > 恢复到指定时间点，优先选“创建新实例”；恢复到原实例会覆盖数据、恢复期间实例不可用、日志归档停止；单副本实例不支持 PITR；先在测试实例完整演练一次：\n-- DANGER: 控制台 > 备份 > 恢复到指定时间点 > 创建新实例（勿直接恢复到原实例）；",
+              "title": "PITR 恢复演练清单",
+              "versions": "集中式 / 分布式 V2.0-2.1+"
+            }
+          ],
+          "name": "备份"
+        }
+      ]
+    },
+    {
+      "name": "高可用 / 复制",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "pg_stat_replication",
+              "id": "gaussdb-012",
+              "notes": "华为云 GaussDB 分布式开发指南 PG_STAT_REPLICATION 视图原文列名：state（startup/catchup/streaming/backup/stopping）、sync_state（async/sync/potential/quorum）；在主 DN 上查询；集中式 1 主 2 备、分布式各 DN 组 1 主 2 备 Paxos。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT application_name, client_addr, state, sync_state,\n  sender_sent_location, receiver_write_location,\n  receiver_flush_location, receiver_replay_location\nFROM pg_stat_replication;",
+              "title": "主备同步状态",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            },
+            {
+              "desc": "pgxc_node",
+              "id": "gaussdb-013",
+              "notes": "PGXC_NODE 为 GaussDB 分布式系统目录（CN/DN 节点清单）；集中式无 CN 节点、查不到或报错即为集中式形态，本条用 SELECT * 不展开列名；分布键倾斜另查 pgxc_class。需在 GaussDB 分布式 V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT * FROM pgxc_node;",
+              "title": "分布式节点列表（pgxc_node）",
+              "versions": "分布式 V2.0-8.x（集中式无此视图）"
+            }
+          ],
+          "name": "复制"
+        }
+      ]
+    },
+    {
+      "name": "用户 / 安全",
+      "subcategories": [
+        {
+          "items": [
+            {
+              "desc": "gs_user",
+              "id": "gaussdb-014",
+              "notes": "华为云 GaussDB 开发指南《查询系统目录》原文：GS_USER 看全部用户与 USESYSID / 权限；输出示例含 usename、usesysid、usecreatedb、usesuper、usecatupd、userepl、passwd（本条不查 passwd 列）；普通用户查询结果受限。需在 GaussDB V2.0-8.x 实测核对。",
+              "params": [],
+              "risk": "只读",
+              "sql": "SELECT usename, usesysid, usecreatedb, usesuper, userepl, valbegin, valuntil FROM gs_user ORDER BY usename;",
+              "title": "用户列表（gs_user）",
+              "versions": "集中式 / 分布式 V2.0-8.x"
+            }
+          ],
+          "name": "用户"
+        }
+      ]
+    }
+  ],
+  "id": "gaussdb",
+  "name": "GaussDB",
+  "note": "华为云 GaussDB（openGauss 内核）：集中式 1 主多备、分布式 CN+DN+GTM；慢 SQL 以控制台为准、SQL 侧用 dbe_perf.statement；备份恢复以控制台为准，gs_backup 仅用于自建内核。",
+  "versions": "集中式 / 分布式 V2.0-8.x"
+}

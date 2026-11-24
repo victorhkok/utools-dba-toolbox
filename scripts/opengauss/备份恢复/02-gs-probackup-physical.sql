@@ -1,0 +1,6 @@
+-- 1. 先查看已有备份（只读）：
+-- shell: gs_probackup show -B <BACKUP_PATH> --instance=<INSTANCE>
+-- 2. 全量备份（需先 init / add-instance，见手册）：
+-- shell: gs_probackup backup -B <BACKUP_PATH> --instance=<INSTANCE> -b FULL
+-- 3. 恢复为危险操作，先在测试库演练：
+-- DANGER: gs_probackup restore -B <BACKUP_PATH> --instance=<INSTANCE>;

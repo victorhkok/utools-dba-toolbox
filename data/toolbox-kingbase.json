@@ -1,0 +1,269 @@
+{
+  "id": "kingbase",
+  "name": "金仓 KingBaseES",
+  "versions": "KES V9 / V8.6",
+  "note": "国产化迁移方向，PG 兼容",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "实例",
+          "items": [
+            {
+              "title": "实例状态 / 版本",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "version(), sys_stat_activity",
+              "sql": "SELECT version() AS version;\nSELECT count(*) AS session_count FROM sys_stat_activity;\nSELECT state, count(*) AS cnt FROM sys_stat_activity GROUP BY state ORDER BY cnt DESC;",
+              "params": [],
+              "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（KingbaseES V9）；version() 与 sys_stat_activity（pid/state/query/wait_event_type）见 kingbase.com.cn 性能视图文章。sys_stat_activity 的 sys_ 前缀为 KES V9 命名，pg_stat_activity 为 PG 原生命名，二者同义。未在真实环境跑过，需在 KES V9 实测核对。",
+              "id": "kingbase-001"
+            },
+            {
+              "title": "无效对象清单",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "DBA_OBJECTS（Oracle 兼容模式）",
+              "sql": "SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS\nFROM DBA_OBJECTS\nWHERE STATUS = 'INVALID'\nORDER BY OWNER, OBJECT_TYPE, OBJECT_NAME;",
+              "params": [],
+              "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/。仅 Oracle 兼容模式提供 DBA_OBJECTS，PG 兼容模式无此视图；DBA_OBJECTS 列名与 STATUS 取值需在 KES V9 Oracle 兼容模式实测核对。",
+              "id": "kingbase-002"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "参数与缓存",
+          "items": [
+            {
+              "title": "缓存命中率 / 内存",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "sys_stat_database",
+              "sql": "SELECT datname, blks_hit, blks_read,\n  ROUND(100.0 * blks_hit / NULLIF(blks_hit + blks_read, 0), 2) AS hit_ratio_pct\nFROM sys_stat_database\nORDER BY datname;",
+              "params": [],
+              "notes": "依据：kingbase.com.cn 性能视图文章（sys_stat_database：事务数、块读写数）与 PG 兼容的 sys_stat_database 列名。blks_hit/blks_read 列名需在 KES V9 实测核对。",
+              "id": "kingbase-003"
+            },
+            {
+              "title": "统计信息收集",
+              "versions": "V9+",
+              "risk": "谨慎",
+              "desc": "ANALYZE",
+              "sql": "-- 1. 先确认表上次分析时间（只读）：\nSELECT schemaname, relname, last_analyze, last_autoanalyze, n_live_tup\nFROM sys_stat_user_tables\nWHERE schemaname = '<SCHEMA>' AND relname = '<TABLE>';\n-- 2. 确认后在非高峰执行（谨慎）：\n-- DANGER: ANALYZE <SCHEMA>.<TABLE>;",
+              "params": [
+                {
+                  "name": "SCHEMA",
+                  "desc": "模式名"
+                },
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "依据：kingbase.com.cn 性能视图文章（sys_stat_user_tables 的 last_analyze / n_live_tup 用于判断是否需 ANALYZE/VACUUM）与 PG 兼容语法。ANALYZE 语法按 PG 兼容模式，需在 KES V9 实测核对。",
+              "id": "kingbase-004"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "慢SQL Top（sys_stat_statements）",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "sys_stat_statements",
+              "sql": "SELECT query, calls, total_time, mean_time, rows, shared_blks_hit, shared_blks_read\nFROM sys_stat_statements\nORDER BY total_time DESC\nLIMIT 10;",
+              "params": [],
+              "notes": "依据：kingbase.com.cn《KES 如何配置 sys_stat_statements》与性能调优白皮书：需 kingbase.conf 配 shared_preload_libraries='sys_stat_statements' 并重启，再 CREATE EXTENSION sys_stat_statements；列 query/calls/total_time/mean_time/rows/shared_blks_hit/shared_blks_read 见该文。未启用扩展时视图无数据，需在 KES V9 实测核对。",
+              "id": "kingbase-005"
+            },
+            {
+              "title": "执行计划（EXPLAIN ANALYZE）",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "EXPLAIN ANALYZE",
+              "sql": "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM <SCHEMA>.<TABLE> WHERE <CONDITION>;",
+              "params": [
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "表名"
+                },
+                {
+                  "name": "CONDITION",
+                  "desc": "WHERE 条件"
+                }
+              ],
+              "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（PG 兼容语法）。注意 EXPLAIN ANALYZE 会真实执行 SQL，写操作改用不带 ANALYZE 的 EXPLAIN；输出格式需在 KES V9 实测核对。",
+              "id": "kingbase-006"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "锁 / 会话",
+      "subcategories": [
+        {
+          "name": "锁",
+          "items": [
+            {
+              "title": "阻塞锁 / 会话",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "sys_locks / sys_stat_activity",
+              "sql": "SELECT blocked.pid AS blocked_pid, blocked.query AS blocked_query,\n  blocking.pid AS blocking_pid, blocking.query AS blocking_query,\n  blocked.wait_event_type, blocked.wait_event\nFROM sys_locks blocked_locks\nJOIN sys_stat_activity blocked ON blocked.pid = blocked_locks.pid\nJOIN sys_locks blocking_locks\n  ON blocking_locks.locktype = blocked_locks.locktype\n  AND blocking_locks.database IS NOT DISTINCT FROM blocked_locks.database\n  AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation\n  AND blocking_locks.pid != blocked_locks.pid\nJOIN sys_stat_activity blocking ON blocking.pid = blocking_locks.pid\nWHERE NOT blocked_locks.granted;",
+              "params": [],
+              "notes": "依据：kingbase.com.cn 性能视图文章（sys_locks 视图 + sys_stat_activity 关联分析阻塞链，wait_event_type='Lock' 为瓶颈信号）。查询结构为 PG 标准阻塞查询的 sys_ 前缀写法，sys_locks 列名（locktype/relation/granted）需在 KES V9 实测核对；pg_locks/pg_stat_activity 为 PG 原生命名。",
+              "id": "kingbase-007"
+            },
+            {
+              "title": "杀会话",
+              "versions": "V9+",
+              "risk": "危险",
+              "desc": "pg_terminate_backend",
+              "sql": "-- 1. 先确认（只读查询）：\nSELECT pid, usename, datname, state, query_start, query FROM sys_stat_activity WHERE pid = <PID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: SELECT pg_terminate_backend(<PID>);",
+              "params": [
+                {
+                  "name": "PID",
+                  "desc": "会话进程 ID"
+                }
+              ],
+              "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（PG 兼容函数）。pg_terminate_backend 为 PG 兼容函数名，需在 KES V9 实测核对；杀会话前务必确认业务影响，优先用 pg_cancel_backend 取消当前查询。",
+              "id": "kingbase-008"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间",
+      "subcategories": [
+        {
+          "name": "空间",
+          "items": [
+            {
+              "title": "表空间大小一览",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "sys_tablespace / sys_tablespace_size",
+              "sql": "SELECT spcname, sys_size_pretty(sys_tablespace_size(spcname)) AS size\nFROM sys_tablespace\nORDER BY sys_tablespace_size(spcname) DESC;",
+              "params": [],
+              "notes": "依据：金仓运维命令清单（sys_tablespace + sys_tablespace_size）与官方文档中心 https://help.kingbase.com.cn/。KES 未提供 DBA_FREE_SPACE 式空闲视图，本条只给各表空间已用大小，使用率需结合操作系统 df 或数据目录大小估算，需在 KES V9 实测核对。",
+              "id": "kingbase-009"
+            },
+            {
+              "title": "大表 Top",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "sys_total_relation_size",
+              "sql": "SELECT relname, sys_size_pretty(sys_total_relation_size(oid)) AS total_size\nFROM sys_class\nWHERE relkind = 'r'\nORDER BY sys_total_relation_size(oid) DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "依据：金仓运维命令清单（sys_total_relation_size + sys_class relkind='r'）与官方文档中心 https://help.kingbase.com.cn/。sys_total_relation_size 含表 + 索引 + TOAST，需在 KES V9 实测核对。",
+              "id": "kingbase-010"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "物理备份（sys_rman 全量 / 增量）",
+              "versions": "V9+",
+              "risk": "谨慎",
+              "desc": "sys_rman",
+              "sql": "-- shell: sys_rman 物理备份（需先完成备份仓库初始化）\n-- shell: sys_rman init -D <数据目录> -R <备份仓库目录>\n-- shell: sys_rman backup -D <数据目录> -R <备份仓库目录> -t full\n-- shell: sys_rman backup -D <数据目录> -R <备份仓库目录> -t incr",
+              "params": [
+                {
+                  "name": "数据目录",
+                  "desc": "实例数据目录路径"
+                },
+                {
+                  "name": "备份仓库目录",
+                  "desc": "sys_rman 备份仓库 repo_path"
+                }
+              ],
+              "notes": "依据：kingbase.com.cn《金仓数据库备份恢复：从原理到实战》（sys_rman init/backup -t full/-t incr，关键参数 repo_path/stanza_name/compress_type）与官方文档中心 https://help.kingbase.com.cn/。备份前确认归档已开启（archive_mode=on）与仓库磁盘余量；具体参数需按 KES V9 手册核对，需在 KES V9 实测核对。",
+              "id": "kingbase-011"
+            },
+            {
+              "title": "时间点恢复演练清单",
+              "versions": "V9+",
+              "risk": "危险",
+              "desc": "sys_rman restore / PITR",
+              "sql": "-- 1. 先确认归档与备份（只读）：\nSHOW archive_mode;\nSELECT * FROM sys_stat_archiver;\n-- 2. 恢复为危险操作，先停库、先在测试库全流程演练：\n-- DANGER: sys_rman restore -D <数据目录> -R <备份仓库目录>\n-- DANGER: 恢复后按手册用 WAL 归档做时间点恢复（PITR），切勿在生产库直接演练。",
+              "params": [
+                {
+                  "name": "数据目录",
+                  "desc": "实例数据目录路径"
+                },
+                {
+                  "name": "备份仓库目录",
+                  "desc": "sys_rman 备份仓库 repo_path"
+                }
+              ],
+              "notes": "依据：kingbase.com.cn《金仓数据库备份恢复：从原理到实战》（恢复前停库、sys_rman restore、结合 WAL 做 PITR）与官方文档中心 https://help.kingbase.com.cn/。restore 的完整参数与 PITR 步骤需按 KES V9 手册核对，未在真实环境跑过，需在 KES V9 实测核对。",
+              "id": "kingbase-012"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用",
+      "subcategories": [
+        {
+          "name": "流复制",
+          "items": [
+            {
+              "title": "主备 / 流复制状态",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "sys_stat_replication",
+              "sql": "SELECT application_name, client_addr, state, sync_state,\n  sent_lsn, write_lsn, flush_lsn, replay_lsn\nFROM sys_stat_replication;\n-- 备库延迟（在备库执行）：\n-- SELECT now() - pg_last_xact_replay_timestamp() AS replay_delay;",
+              "params": [],
+              "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（PG 兼容的流复制视图）。sys_stat_replication 列名（sent_lsn/write_lsn/flush_lsn/replay_lsn）与备库函数 pg_last_xact_replay_timestamp 需在 KES V9 实测核对；pg_stat_replication 为 PG 原生命名。",
+              "id": "kingbase-013"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "用户 / 安全",
+      "subcategories": [
+        {
+          "name": "账号",
+          "items": [
+            {
+              "title": "用户与角色列表",
+              "versions": "V9+",
+              "risk": "只读",
+              "desc": "pg_roles",
+              "sql": "SELECT rolname, rolsuper, rolcanlogin, rolconnlimit\nFROM pg_roles\nORDER BY rolname;",
+              "params": [],
+              "notes": "依据：金仓官方文档中心 https://help.kingbase.com.cn/（PG 兼容模式系统目录）。pg_roles 列名需在 KES V9 实测核对；Oracle 兼容模式下用户查询改用 DBA_USERS，两种模式不可混用。",
+              "id": "kingbase-014"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

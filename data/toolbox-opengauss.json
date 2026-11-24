@@ -1,0 +1,287 @@
+{
+  "id": "opengauss",
+  "name": "openGauss",
+  "versions": "5.0 / 6.0 LTS",
+  "note": "华为开源，PostgreSQL 内核，PG 兼容视图与 openGauss 专属视图（GS_WLM_*）并存",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "实例",
+          "items": [
+            {
+              "title": "版本 / 集群状态（gs_om）",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "SELECT version() / gs_om -t status",
+              "sql": "SELECT version();\n-- shell: gs_om -t status\n-- shell: gs_om -t status --detail",
+              "params": [],
+              "notes": "依据：openGauss 官方手册 Routine Maintenance / gs_om。gs_om 须以 OS 用户 omm 执行；cluster_state 为 Normal 表示集群正常。",
+              "id": "opengauss-001"
+            },
+            {
+              "title": "库大小与当前连接数",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "pg_database_size / pg_stat_activity",
+              "sql": "SELECT datname, pg_size_pretty(pg_database_size(datname)) AS size,\n  (SELECT count(*) FROM pg_stat_activity a WHERE a.datid = d.oid) AS connections\nFROM pg_database d ORDER BY pg_database_size(datname) DESC;",
+              "params": [],
+              "notes": "依据：官方手册 Routine Maintenance（pg_database_size / SELECT count(*) FROM pg_stat_activity）。pg_stat_activity 沿用开源 PG 的视图名与列名；openGauss 中 pid 为线程 ID，且普通用户只能看到自己的会话状态。",
+              "id": "opengauss-002"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "性能",
+          "items": [
+            {
+              "title": "大表 / 大索引 Top",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "pg_total_relation_size",
+              "sql": "SELECT schemaname, relname, pg_size_pretty(pg_total_relation_size(relid)) AS total_size,\n  pg_size_pretty(pg_table_size(relid)) AS table_size,\n  pg_size_pretty(pg_indexes_size(relid)) AS indexes_size\nFROM pg_catalog.pg_statio_user_tables\nORDER BY pg_total_relation_size(relid) DESC LIMIT 20;",
+              "params": [],
+              "notes": "依据：pg_total_relation_size / pg_table_size / pg_indexes_size 为 openGauss 沿用开源 PG 的函数，需在 openGauss 6.0 实测核对 pg_statio_user_tables 的列名。",
+              "id": "opengauss-003"
+            },
+            {
+              "title": "统计信息收集（ANALYZE）",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "谨慎",
+              "desc": "ANALYZE",
+              "sql": "-- 1. 先确认统计信息是否过期（只读）：\nSELECT schemaname, relname, last_analyze, last_autoanalyze, n_mod_since_analyze\nFROM pg_stat_user_tables WHERE schemaname = '<SCHEMA>' AND relname = '<TABLE>';\n-- 2. 确认后再执行（建议非高峰）：\n-- DANGER: ANALYZE <SCHEMA>.<TABLE>;",
+              "params": [
+                {
+                  "name": "SCHEMA",
+                  "desc": "模式名"
+                },
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "依据：ANALYZE 与 pg_stat_user_tables 沿用开源 PG 语法；官方手册 Routine Maintenance 建议用 VACUUM 回收空间并更新统计信息。n_mod_since_analyze 列名需在 openGauss 6.0 实测核对。",
+              "id": "opengauss-004"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "慢SQL Top（GS_WLM_SESSION_INFO）",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "GS_WLM_SESSION_INFO",
+              "sql": "SELECT dbname, username, duration AS duration_ms, start_time, finish_time, status,\n  left(query, 200) AS query_snippet\nFROM gs_wlm_session_info\nWHERE duration > <THRESHOLD_MS>\nORDER BY duration DESC LIMIT 20;",
+              "params": [
+                {
+                  "name": "THRESHOLD_MS",
+                  "desc": "慢查询阈值（毫秒），如 1000"
+                }
+              ],
+              "notes": "依据：官方手册 GS_WLM_SESSION_INFO 列名 duration（毫秒）、dbname、username、start_time、finish_time、status、query 均已核对。注意：该视图仅 sysadmin 可查，且仅在 postgres 库可查；GS_SLOW_QUERY_INFO 在 5.0 已废弃，不要用；enable_resource_record 须为 on 才会定期入库，需在 6.0 实测核对。",
+              "id": "opengauss-005"
+            },
+            {
+              "title": "执行计划（EXPLAIN）",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "EXPLAIN",
+              "sql": "EXPLAIN SELECT * FROM <SCHEMA>.<TABLE> WHERE <CONDITION>;",
+              "params": [
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "表名"
+                },
+                {
+                  "name": "CONDITION",
+                  "desc": "WHERE 条件"
+                }
+              ],
+              "notes": "依据：官方手册 Routine Maintenance 建议用 EXPLAIN 查看执行计划。只给不执行的 EXPLAIN；EXPLAIN ANALYZE 会真实执行，勿对写操作使用，需在 openGauss 6.0 实测核对。",
+              "id": "opengauss-006"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "锁/会话",
+      "subcategories": [
+        {
+          "name": "锁",
+          "items": [
+            {
+              "title": "阻塞锁 / 等待会话",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "pg_locks / pg_stat_activity",
+              "sql": "-- 正在等待锁的会话（官方手册示例：pg_stat_activity WHERE waiting = true）：\nSELECT datname, usename, pid, state, waiting, now() - query_start AS wait_duration, left(query, 200) AS query\nFROM pg_stat_activity WHERE waiting = true ORDER BY query_start;\n-- 锁持有情况：\nSELECT locktype, mode, granted, count(*) AS cnt FROM pg_locks GROUP BY locktype, mode, granted ORDER BY cnt DESC;",
+              "params": [],
+              "notes": "依据：官方手册 Analyzing the Status of a Query Statement（waiting = true）与 Routine Maintenance（SELECT * FROM pg_locks）。pg_locks / pg_stat_activity 沿用开源 PG；openGauss 的 waiting 列与 PG 行为一致，需在 6.0 实测核对。",
+              "id": "opengauss-007"
+            },
+            {
+              "title": "强制终止会话",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "危险",
+              "desc": "pg_terminate_backend",
+              "sql": "-- 1. 先确认（只读查询）：\nSELECT datid, pid, usename, state, left(query, 200) AS query FROM pg_stat_activity WHERE pid = <PID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: SELECT pg_terminate_backend(<PID>);",
+              "params": [
+                {
+                  "name": "PID",
+                  "desc": "会话线程 ID（pg_stat_activity.pid）"
+                }
+              ],
+              "notes": "依据：官方手册 Forcibly Terminating a Session（SELECT pg_terminate_backend(<pid>)）。openGauss 的 pid 是线程 ID（bigint），不是 OS 进程号；杀会话前务必确认业务影响。",
+              "id": "opengauss-008"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间/存储",
+      "subcategories": [
+        {
+          "name": "空间",
+          "items": [
+            {
+              "title": "表空间使用情况",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "pg_tablespace_size",
+              "sql": "SELECT spcname, pg_size_pretty(pg_tablespace_size(spcname)) AS size,\n  pg_tablespace_location(oid) AS location\nFROM pg_tablespace ORDER BY pg_tablespace_size(spcname) DESC;",
+              "params": [],
+              "notes": "依据：pg_tablespace_size / pg_tablespace 沿用开源 PG。pg_tablespace_location 列名与返回值需在 openGauss 6.0 实测核对。",
+              "id": "opengauss-009"
+            },
+            {
+              "title": "死元组 / 膨胀检查",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "pg_stat_user_tables",
+              "sql": "SELECT schemaname, relname, n_live_tup, n_dead_tup,\n  round(100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct,\n  last_vacuum, last_autovacuum, last_analyze\nFROM pg_stat_user_tables\nWHERE n_dead_tup > 0 ORDER BY n_dead_tup DESC LIMIT 20;",
+              "params": [],
+              "notes": "依据：pg_stat_user_tables 沿用开源 PG；官方手册 Routine Maintenance 建议用 VACUUM 回收空间。死元组占比高时先在测试环境验证 VACUUM 影响，列名需在 openGauss 6.0 实测核对。",
+              "id": "opengauss-010"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "逻辑备份（gs_dump）",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "谨慎",
+              "desc": "gs_dump",
+              "sql": "-- shell: gs_dump <DBNAME> -p <PORT> -f <OUTFILE>.sql -U <USER>\n-- shell: gs_dump <DBNAME> -p <PORT> -n <SCHEMA> -f <OUTFILE>.sql\n-- shell: gs_dump <DBNAME> -p <PORT> -t <TABLE> -f <OUTFILE>.sql\n-- shell: gs_dumpall -p <PORT> -f <OUTFILE>.sql\n-- 恢复（文本格式用 gsql，归档格式用 gs_restore）：\n-- shell: gsql -d <DBNAME> -p <PORT> -f <OUTFILE>.sql",
+              "params": [
+                {
+                  "name": "DBNAME",
+                  "desc": "数据库名"
+                },
+                {
+                  "name": "PORT",
+                  "desc": "端口（默认 26000）"
+                },
+                {
+                  "name": "OUTFILE",
+                  "desc": "备份输出文件"
+                }
+              ],
+              "notes": "依据：官方手册 Routine Maintenance 与备份恢复总览（gs_dump / gs_dumpall / gs_restore）。文本格式恢复慢、大库慎用；备份前确认磁盘余量。",
+              "id": "opengauss-011"
+            },
+            {
+              "title": "物理备份与恢复（gs_probackup）",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "危险",
+              "desc": "gs_probackup",
+              "sql": "-- 1. 先查看已有备份（只读）：\n-- shell: gs_probackup show -B <BACKUP_PATH> --instance=<INSTANCE>\n-- 2. 全量备份（需先 init / add-instance，见手册）：\n-- shell: gs_probackup backup -B <BACKUP_PATH> --instance=<INSTANCE> -b FULL\n-- 3. 恢复为危险操作，先在测试库演练：\n-- DANGER: gs_probackup restore -B <BACKUP_PATH> --instance=<INSTANCE>;",
+              "params": [
+                {
+                  "name": "BACKUP_PATH",
+                  "desc": "备份目录"
+                },
+                {
+                  "name": "INSTANCE",
+                  "desc": "备份实例名"
+                }
+              ],
+              "notes": "依据：官方手册 gs_probackup（支持全量/增量/定期/远程备份、PTRACK 增量需 enable_cbm_tracking=on）。init 与 add-instance 的完整参数需按手册核对；恢复前务必先停写并做副本，需在 6.0 实测核对。",
+              "id": "opengauss-012"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用/容灾",
+      "subcategories": [
+        {
+          "name": "主备",
+          "items": [
+            {
+              "title": "主备复制状态与延迟",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "只读",
+              "desc": "pg_stat_replication / gs_om",
+              "sql": "-- 主库视角：备库同步状态与日志位置（官方手册列名已核对）：\nSELECT application_name, client_addr, state, sync_state, sync_priority,\n  sender_sent_location, receiver_write_location, receiver_flush_location, receiver_replay_location\nFROM pg_stat_replication;\n-- shell: gs_om -t status",
+              "params": [],
+              "notes": "依据：官方手册 PG_STAT_REPLICATION（state / sync_state / sender_sent_location / receiver_replay_location）与 gs_om。openGauss 沿用 PG 的 pg_stat_replication 视图名，但 state 取值（catchup/streaming）与开源 PG 略有不同，需在 6.0 实测核对。",
+              "id": "opengauss-013"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "用户/安全",
+      "subcategories": [
+        {
+          "name": "用户",
+          "items": [
+            {
+              "title": "用户与权限",
+              "versions": "5.0 / 6.0 LTS",
+              "risk": "谨慎",
+              "desc": "pg_roles / CREATE USER",
+              "sql": "-- 1. 先查看现有用户与属性（只读）：\nSELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, rolvaliduntil FROM pg_roles ORDER BY rolname;\n-- 2. 新建用户（模板，密码须符合 openGauss 复杂度要求）：\n-- DANGER: CREATE USER <USERNAME> WITH PASSWORD '<PASSWORD>';\n-- 3. 授权示例：\n-- DANGER: GRANT SELECT ON <SCHEMA>.<TABLE> TO <USERNAME>;",
+              "params": [
+                {
+                  "name": "USERNAME",
+                  "desc": "用户名"
+                },
+                {
+                  "name": "PASSWORD",
+                  "desc": "密码（符合复杂度要求）"
+                }
+              ],
+              "notes": "依据：pg_roles 沿用开源 PG。CREATE USER / GRANT 语法沿用 PG，但 openGauss 默认密码复杂度策略与 PG 不同，弱密码会被拒绝，密码规则需在 6.0 实测核对；切勿在脚本里留真实密码。",
+              "id": "opengauss-014"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

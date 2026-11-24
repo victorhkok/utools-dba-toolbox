@@ -1,0 +1,7 @@
+SELECT TABLE_SCHEMA, TABLE_NAME,
+  ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb,
+  TABLE_ROWS
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+ORDER BY DATA_LENGTH + INDEX_LENGTH DESC
+LIMIT 20;

@@ -1,0 +1,4 @@
+-- 1. 先确认当前参数（只读）：
+SHOW CREATE DATABASE <DBNAME>;
+-- 2. 确认后再执行（KEEP 须 >= 3 倍 DURATION，缩短 KEEP 会丢弃过期数据）：
+-- DANGER: ALTER DATABASE <DBNAME> KEEP <KEEP> COMP <COMP>;

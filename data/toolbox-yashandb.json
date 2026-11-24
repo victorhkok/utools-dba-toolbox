@@ -1,0 +1,265 @@
+{
+  "id": "yashandb",
+  "name": "崖山 YashanDB",
+  "versions": "YashanDB 23.2",
+  "note": "国产化迁移方向，Oracle 兼容",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "实例",
+          "items": [
+            {
+              "title": "实例状态 / 版本",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "V$INSTANCE, V$VERSION",
+              "sql": "SELECT * FROM V$INSTANCE;\nSELECT * FROM V$VERSION;",
+              "params": [],
+              "notes": "依据：YashanDB 管理员手册 v23.2.2.0（SELECT status FROM V$INSTANCE；实例启停章节）与官方文档中心 https://doc.yashandb.com/。V$INSTANCE/V$VERSION 列名以手册为准，SELECT * 避免编列名；需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-001"
+            },
+            {
+              "title": "无效对象清单",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "DBA_OBJECTS",
+              "sql": "SELECT OWNER, OBJECT_NAME, OBJECT_TYPE, STATUS\nFROM DBA_OBJECTS\nWHERE STATUS = 'INVALID'\nORDER BY OWNER, OBJECT_TYPE, OBJECT_NAME;",
+              "params": [],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（DBA_OBJECTS 属 Oracle 兼容 DBA 视图清单）与官方文档中心 https://doc.yashandb.com/。DBA_OBJECTS 在 YashanDB 中的列名与 STATUS 取值需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-002"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "性能",
+          "items": [
+            {
+              "title": "缓存命中率 / 内存",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "V$SYSSTAT",
+              "sql": "SELECT NAME, VALUE FROM V$SYSSTAT\nWHERE NAME LIKE '%physical reads%' OR NAME LIKE '%consistent gets%' OR NAME LIKE '%db block gets%';\n-- 命中率估算：1 - physical reads / (consistent gets + db block gets)，分母为 0 时结果为 NULL。",
+              "params": [],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（V$SYSSTAT 属 Oracle 兼容动态视图清单）与官方文档中心 https://doc.yashandb.com/。V$SYSSTAT 统计项名称为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对；精确列名未在手册检索中逐项确认，故用 LIKE 匹配。",
+              "id": "yashandb-003"
+            },
+            {
+              "title": "统计信息收集",
+              "versions": "23.2+",
+              "risk": "谨慎",
+              "desc": "DBMS_STATS",
+              "sql": "-- 1. 先确认表上次分析时间（只读）：\nSELECT OWNER, TABLE_NAME, NUM_ROWS, LAST_ANALYZED FROM DBA_TABLES\nWHERE OWNER = '<SCHEMA>' AND TABLE_NAME = '<TABLE>';\n-- 2. 确认后在非高峰执行（谨慎）：\n-- DANGER: EXEC DBMS_STATS.GATHER_TABLE_STATS('<SCHEMA>', '<TABLE>');",
+              "params": [
+                {
+                  "name": "SCHEMA",
+                  "desc": "模式名"
+                },
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（Oracle 兼容语法与 DBA_TABLES 视图）与官方文档中心 https://doc.yashandb.com/。DBMS_STATS.GATHER_TABLE_STATS 在 YashanDB 中的可用性与参数需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-004"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "慢SQL Top（V$SQL）",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "V$SQL",
+              "sql": "SELECT * FROM (\n  SELECT SQL_TEXT, ELAPSED_TIME, EXECUTIONS\n  FROM V$SQL\n  WHERE ELAPSED_TIME > 0\n  ORDER BY ELAPSED_TIME DESC\n) WHERE ROWNUM <= 20;",
+              "params": [],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（V$SQL 属 Oracle 兼容动态视图清单）与官方文档中心 https://doc.yashandb.com/。V$SQL 列名（SQL_TEXT/ELAPSED_TIME/EXECUTIONS）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-005"
+            },
+            {
+              "title": "执行计划（EXPLAIN PLAN）",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "EXPLAIN PLAN / DBMS_XPLAN",
+              "sql": "EXPLAIN PLAN FOR SELECT * FROM <SCHEMA>.<TABLE> WHERE <CONDITION>;\nSELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);",
+              "params": [
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "表名"
+                },
+                {
+                  "name": "CONDITION",
+                  "desc": "WHERE 条件"
+                }
+              ],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（Oracle 兼容 SQL 语法）与官方文档中心 https://doc.yashandb.com/。DBMS_XPLAN.DISPLAY 在 YashanDB 中的可用性需在 YashanDB 23.2 实测核对；EXPLAIN PLAN 本身不执行 SQL。",
+              "id": "yashandb-006"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "锁 / 会话",
+      "subcategories": [
+        {
+          "name": "锁",
+          "items": [
+            {
+              "title": "阻塞锁 / 会话",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "V$LOCKED_OBJECT / V$SESSION",
+              "sql": "SELECT S.SID, S.SERIAL#, S.USERNAME, S.STATUS, O.OBJECT_NAME, L.LOCKED_MODE\nFROM V$LOCKED_OBJECT L\nJOIN DBA_OBJECTS O ON L.OBJECT_ID = O.OBJECT_ID\nJOIN V$SESSION S ON L.SESSION_ID = S.SID\nORDER BY S.SID;",
+              "params": [],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（V$LOCKED_OBJECT、V$SESSION、V$LOCK 属 Oracle 兼容动态视图清单）与官方文档中心 https://doc.yashandb.com/。V$LOCKED_OBJECT 列名（SESSION_ID/OBJECT_ID/LOCKED_MODE）与 V$SESSION 列名（SID/SERIAL#/USERNAME/STATUS）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-007"
+            },
+            {
+              "title": "杀会话",
+              "versions": "23.2+",
+              "risk": "危险",
+              "desc": "ALTER SYSTEM KILL SESSION",
+              "sql": "-- 1. 先确认（只读查询）：\nSELECT SID, SERIAL#, USERNAME, STATUS, MACHINE FROM V$SESSION WHERE SID = <SID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: ALTER SYSTEM KILL SESSION '<SID>,<SERIAL#>';",
+              "params": [
+                {
+                  "name": "SID",
+                  "desc": "会话 SID"
+                },
+                {
+                  "name": "SERIAL#",
+                  "desc": "会话 SERIAL#"
+                }
+              ],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（V$SESSION 列 SID/SERIAL#，Oracle 兼容语法）与官方文档中心 https://doc.yashandb.com/。ALTER SYSTEM KILL SESSION 语法为 Oracle 兼容写法，需在 YashanDB 23.2 实测核对；杀会话前务必确认业务影响。",
+              "id": "yashandb-008"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间",
+      "subcategories": [
+        {
+          "name": "空间",
+          "items": [
+            {
+              "title": "表空间使用率",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "DBA_DATA_FILES / DBA_FREE_SPACE",
+              "sql": "SELECT T.TABLESPACE_NAME, ROUND(SUM(F.BYTES)/1024/1024, 2) AS TOTAL_MB,\n  ROUND((SUM(F.BYTES) - NVL(SUM(FREE.BYTES), 0))/1024/1024, 2) AS USED_MB,\n  ROUND((1 - NVL(SUM(FREE.BYTES), 0)/SUM(F.BYTES)) * 100, 2) AS USED_PCT\nFROM DBA_DATA_FILES F\nJOIN DBA_TABLESPACES T ON F.TABLESPACE_NAME = T.TABLESPACE_NAME\nLEFT JOIN (SELECT TABLESPACE_NAME, SUM(BYTES) BYTES FROM DBA_FREE_SPACE GROUP BY TABLESPACE_NAME) FREE\n  ON FREE.TABLESPACE_NAME = T.TABLESPACE_NAME\nGROUP BY T.TABLESPACE_NAME\nORDER BY USED_PCT DESC;",
+              "params": [],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（DBA_TABLESPACES/DBA_DATA_FILES 属 Oracle 兼容 DBA 视图清单）与官方文档中心 https://doc.yashandb.com/。DBA_FREE_SPACE 列名需在 YashanDB 23.2 实测核对；>85% 预警。空闲字节用 SUM 聚合，避免重复计算。",
+              "id": "yashandb-009"
+            },
+            {
+              "title": "大表 Top",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "DBA_SEGMENTS",
+              "sql": "SELECT * FROM (\n  SELECT OWNER, SEGMENT_NAME, SEGMENT_TYPE, ROUND(BYTES/1024/1024, 2) AS SIZE_MB\n  FROM DBA_SEGMENTS\n  ORDER BY BYTES DESC\n) WHERE ROWNUM <= 20;",
+              "params": [],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（Oracle 兼容 DBA 视图）与官方文档中心 https://doc.yashandb.com/。DBA_SEGMENTS 列名（OWNER/SEGMENT_NAME/SEGMENT_TYPE/BYTES）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-010"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "备份 / 归档状态",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "V$DATABASE / V$ARCHIVED_LOG",
+              "sql": "SELECT DATABASE_NAME, LOG_MODE, OPEN_MODE FROM V$DATABASE;\nSELECT * FROM (\n  SELECT SEQUENCE#, FIRST_TIME, ARCHIVED\n  FROM V$ARCHIVED_LOG\n  WHERE FIRST_TIME > SYSDATE - 1\n  ORDER BY FIRST_TIME DESC\n) WHERE ROWNUM <= 20;",
+              "params": [],
+              "notes": "依据：YashanDB 管理员手册 v23.2.2.0（V$DATABASE 的 log_mode 字段表示归档模式，ARCHIVELOG/NOARCHIVELOG；默认归档路径由 ARCHIVE_LOCAL_DEST 控制）与官方文档中心 https://doc.yashandb.com/。V$ARCHIVED_LOG 属 Oracle 兼容动态视图清单，列名（SEQUENCE#/FIRST_TIME/ARCHIVED）需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-011"
+            },
+            {
+              "title": "时间点恢复演练清单",
+              "versions": "23.2+",
+              "risk": "危险",
+              "desc": "PITR 演练",
+              "sql": "-- 恢复演练清单（只读检查 + 演练步骤，恢复命令以官方手册为准，禁止凭印象执行）：\n-- 1. 确认归档模式（只读）：\nSELECT DATABASE_NAME, LOG_MODE, OPEN_MODE FROM V$DATABASE;\n-- 2. 确认归档连续性（只读）：\nSELECT SEQUENCE#, FIRST_TIME FROM V$ARCHIVED_LOG WHERE FIRST_TIME > SYSDATE - 7 ORDER BY SEQUENCE#;\n-- 3. 确认最近备份集可用（按管理员手册的备份集管理方式核对）；\n-- DANGER: 恢复命令（工具名与参数）需按 YashanDB 管理员手册核对，先在测试库全流程演练，生产恢复前先停写并做副本。",
+              "params": [
+                {
+                  "name": "恢复目标时间",
+                  "desc": "PITR 目标时间点"
+                }
+              ],
+              "notes": "依据：YashanDB 管理员手册 v23.2.2.0（归档模式 + redo 归档支持 PITR；故障恢复靠历史全量备份 + 归档 redo 重做）与官方文档中心 https://doc.yashandb.com/。备份恢复工具的具体命令名与参数未在本次官方手册检索中逐项确认，故本条只给清单、不编命令，需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-012"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用",
+      "subcategories": [
+        {
+          "name": "主备",
+          "items": [
+            {
+              "title": "主备状态 / 复制延迟",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "V$DATABASE / V$ARCHIVE_DEST_STATUS",
+              "sql": "SELECT DATABASE_NAME, LOG_MODE, OPEN_MODE, PROTECTION_MODE, DATABASE_ROLE, BLOCK_SIZE, STATUS FROM V$DATABASE;\nSELECT DEST_ID, STATUS, TYPE, ERROR FROM V$ARCHIVE_DEST_STATUS;",
+              "params": [],
+              "notes": "依据：YashanDB 管理员手册 v23.2.2.0（V$DATABASE 的 DATABASE_ROLE/PROTECTION_MODE 字段示例，主备模式必看）与 Oracle 兼容性说明（V$ARCHIVE_DEST、V$ARCHIVE_DEST_STATUS、V$ARCHIVE_GAP 属兼容动态视图清单），官方文档中心 https://doc.yashandb.com/。V$ARCHIVE_DEST_STATUS 列名（DEST_ID/STATUS/TYPE/ERROR）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-013"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "用户 / 安全",
+      "subcategories": [
+        {
+          "name": "账号",
+          "items": [
+            {
+              "title": "用户列表与权限",
+              "versions": "23.2+",
+              "risk": "只读",
+              "desc": "DBA_USERS / DBA_SYS_PRIVS",
+              "sql": "SELECT USERNAME, ACCOUNT_STATUS, DEFAULT_TABLESPACE, CREATED FROM DBA_USERS ORDER BY USERNAME;\nSELECT GRANTEE, PRIVILEGE FROM DBA_SYS_PRIVS WHERE GRANTEE = '<USER>' ORDER BY PRIVILEGE;",
+              "params": [
+                {
+                  "name": "USER",
+                  "desc": "用户名"
+                }
+              ],
+              "notes": "依据：YashanDB 与 Oracle 兼容性说明（Oracle 兼容 DBA 视图）与官方文档中心 https://doc.yashandb.com/。DBA_USERS/DBA_SYS_PRIVS 列名（USERNAME/ACCOUNT_STATUS/DEFAULT_TABLESPACE/CREATED、GRANTEE/PRIVILEGE）为 Oracle 兼容命名，需在 YashanDB 23.2 实测核对。",
+              "id": "yashandb-014"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

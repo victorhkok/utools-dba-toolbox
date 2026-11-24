@@ -1,0 +1,3 @@
+SELECT LAST_ROW(*) FROM <STABLE>;
+SELECT tbname, LAST_ROW(ts) AS last_ts, now - LAST_ROW(ts) AS lag
+FROM <STABLE> PARTITION BY tbname ORDER BY lag DESC LIMIT 20;

@@ -1,0 +1,319 @@
+{
+  "id": "tdengine",
+  "name": "TDengine",
+  "versions": "3.x（社区版 / 企业版）",
+  "note": "时序数据库，一设备一表 + 超级表（STable）模型；全备为企业版功能",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "集群",
+          "items": [
+            {
+              "title": "版本与数据节点状态",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "SELECT SERVER_VERSION() / SHOW DNODES",
+              "sql": "SELECT SERVER_VERSION();\nSHOW DNODES;\nSHOW MNODES;",
+              "params": [],
+              "notes": "依据：TDengine 官方架构文档（dnode 为 taosd 进程、mnode 管元数据与协调）。SERVER_VERSION() 列名与 SHOW DNODES 输出列需在 3.x 实测核对。",
+              "id": "tdengine-001"
+            },
+            {
+              "title": "库 / 超级表清单",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "SHOW DATABASES / SHOW STABLES",
+              "sql": "SHOW DATABASES;\nUSE <DBNAME>;\nSHOW STABLES;\nSHOW TABLES;",
+              "params": [
+                {
+                  "name": "DBNAME",
+                  "desc": "数据库名"
+                }
+              ],
+              "notes": "依据：TDengine 官方文档 SHOW 语法。SHOW STABLES / SHOW TABLES 需先 USE 指定库；输出列需在 3.x 实测核对。",
+              "id": "tdengine-002"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能/写入",
+      "subcategories": [
+        {
+          "name": "查询",
+          "items": [
+            {
+              "title": "正在执行的查询",
+              "versions": "3.4+",
+              "risk": "只读",
+              "desc": "SHOW QUERIES",
+              "sql": "SHOW QUERIES;",
+              "params": [],
+              "notes": "依据：TDengine 3.4.1.0 Release Notes（SHOW QUERIES 显示执行进度）。输出列（如 query id / 执行时长）需在 3.4.x 实测核对。",
+              "id": "tdengine-003"
+            },
+            {
+              "title": "超级表下采样聚合（INTERVAL）",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "INTERVAL / PARTITION BY tbname",
+              "sql": "SELECT _wstart AS window_start, tbname, count(*) AS rows_cnt, avg(<MEASURE_COL>) AS avg_val\nFROM <STABLE>\nWHERE ts >= now - 1h AND ts < now\nPARTITION BY tbname INTERVAL(5m)\nORDER BY window_start DESC, tbname LIMIT 100;",
+              "params": [
+                {
+                  "name": "STABLE",
+                  "desc": "超级表名"
+                },
+                {
+                  "name": "MEASURE_COL",
+                  "desc": "度量列名，如 current"
+                }
+              ],
+              "notes": "依据：TDengine 官方文档的时序扩展语法（INTERVAL 时间窗口、PARTITION BY tbname 按子表分组）。_wstart 为窗口起始时间伪列，需在 3.x 实测核对。",
+              "id": "tdengine-004"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢查询",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "慢查询定位（SHOW QUERIES + EXPLAIN）",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "SHOW QUERIES / EXPLAIN",
+              "sql": "-- 1. 先看当前在跑的查询（只读）：\nSHOW QUERIES;\n-- 2. 对可疑 SQL 看执行计划（模板，替换为真实 SQL）：\nEXPLAIN SELECT * FROM <STABLE> WHERE ts >= now - 1h;",
+              "params": [
+                {
+                  "name": "STABLE",
+                  "desc": "超级表名"
+                }
+              ],
+              "notes": "依据：TDengine 官方文档（SHOW QUERIES、EXPLAIN）。TDengine 的慢查询日志阈值与输出位置由服务端配置决定，本条未编参数名，需在 3.x 实测核对 slowLog 相关配置。",
+              "id": "tdengine-005"
+            },
+            {
+              "title": "最新数据到达检查（LAST_ROW）",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "LAST_ROW",
+              "sql": "SELECT LAST_ROW(*) FROM <STABLE>;\nSELECT tbname, LAST_ROW(ts) AS last_ts, now - LAST_ROW(ts) AS lag\nFROM <STABLE> PARTITION BY tbname ORDER BY lag DESC LIMIT 20;",
+              "params": [
+                {
+                  "name": "STABLE",
+                  "desc": "超级表名"
+                }
+              ],
+              "notes": "依据：TDengine 官方文档的 LAST_ROW 函数（取每子表最新一行，常用于判断设备断流）。PARTITION BY tbname + LAST_ROW 的组合写法需在 3.x 实测核对。",
+              "id": "tdengine-006"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间/压缩",
+      "subcategories": [
+        {
+          "name": "空间",
+          "items": [
+            {
+              "title": "库空间与压缩率",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "information_schema.ins_databases",
+              "sql": "SELECT db_name, data_size, storage_size,\n  round(data_size * 1.0 / NULLIF(storage_size, 0), 2) AS compression_ratio\nFROM information_schema.ins_databases ORDER BY storage_size DESC;",
+              "params": [],
+              "notes": "依据：TDengine 官方压缩指南（SELECT db_name, compression_ratio FROM information_schema.ins_databases；data_size / storage_size 同文）。列名需在 3.x 实测核对。",
+              "id": "tdengine-007"
+            },
+            {
+              "title": "虚拟组与子表分布",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "SHOW VGROUPS / SHOW TABLES",
+              "sql": "SHOW VGROUPS;\nUSE <DBNAME>;\nSHOW TABLES;",
+              "params": [
+                {
+                  "name": "DBNAME",
+                  "desc": "数据库名"
+                }
+              ],
+              "notes": "依据：TDengine 官方架构文档（vgroup 为一组互为副本的 vnode）。SHOW VGROUPS 输出列需在 3.x 实测核对。",
+              "id": "tdengine-008"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "保留策略",
+      "subcategories": [
+        {
+          "name": "保留",
+          "items": [
+            {
+              "title": "库保留参数查看",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "SHOW CREATE DATABASE",
+              "sql": "SHOW CREATE DATABASE <DBNAME>;",
+              "params": [
+                {
+                  "name": "DBNAME",
+                  "desc": "数据库名"
+                }
+              ],
+              "notes": "依据：TDengine 官方 Databases 文档（KEEP / DURATION / COMP 等建库参数）。SHOW CREATE DATABASE 的输出格式需在 3.x 实测核对。",
+              "id": "tdengine-009"
+            },
+            {
+              "title": "修改保留时长与压缩",
+              "versions": "3.x",
+              "risk": "谨慎",
+              "desc": "ALTER DATABASE KEEP / COMP",
+              "sql": "-- 1. 先确认当前参数（只读）：\nSHOW CREATE DATABASE <DBNAME>;\n-- 2. 确认后再执行（KEEP 须 >= 3 倍 DURATION，缩短 KEEP 会丢弃过期数据）：\n-- DANGER: ALTER DATABASE <DBNAME> KEEP <KEEP> COMP <COMP>;",
+              "params": [
+                {
+                  "name": "DBNAME",
+                  "desc": "数据库名"
+                },
+                {
+                  "name": "KEEP",
+                  "desc": "保留时长，如 365d"
+                },
+                {
+                  "name": "COMP",
+                  "desc": "压缩级别 0/1/2"
+                }
+              ],
+              "notes": "依据：TDengine 官方 Databases 文档（KEEP 默认 3650 天、须 >= 3 倍 DURATION；COMP 0 不压缩、1 一级、2 二级）。ALTER DATABASE 支持 KEEP / COMP 的写法需在 3.x 实测核对；缩短 KEEP 会删除数据，务必先确认。",
+              "id": "tdengine-010"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "逻辑备份（taosdump）",
+              "versions": "3.x",
+              "risk": "谨慎",
+              "desc": "taosdump",
+              "sql": "-- shell: taosdump -h <HOST> -D <DBNAME> -o <OUTDIR>\n-- shell: taosdump -h <HOST> -A -o <OUTDIR>\n-- shell: taosdump -h <HOST> -D <DBNAME> -s -o <OUTDIR>\n-- 恢复（逻辑恢复，不覆盖已存在的表结构）：\n-- shell: taosdump -h <HOST> -i <OUTDIR>",
+              "params": [
+                {
+                  "name": "HOST",
+                  "desc": "TDengine 服务地址"
+                },
+                {
+                  "name": "DBNAME",
+                  "desc": "数据库名"
+                },
+                {
+                  "name": "OUTDIR",
+                  "desc": "备份输出目录（须为空或不存在）"
+                }
+              ],
+              "notes": "依据：TDengine 官方 taosdump 文档（-D 指定库、-A 全库、-s 仅元数据、-i 恢复；3.4.2+ 支持 binary/parquet 格式）。taosdump 为逻辑备份，不含集群拓扑与配置。",
+              "id": "tdengine-011"
+            },
+            {
+              "title": "企业版全备与恢复",
+              "versions": "3.x 企业版",
+              "risk": "危险",
+              "desc": "CREATE FULL BACKUP / taosd --restore",
+              "sql": "-- 1. 先查看备份记录（只读）：\nSHOW BACKUPS;\n-- 2. 全量备份（仅企业版，联机执行）：\n-- DANGER: CREATE FULL BACKUP ON DNODE <DNODE_ID> TO '<BACKUP_PATH>';\n-- 3. 恢复为离线危险操作，先在测试环境演练：\n-- DANGER: taosd --restore <BACKUP_CHAIN_PATH> --verify=1",
+              "params": [
+                {
+                  "name": "DNODE_ID",
+                  "desc": "数据节点 ID"
+                },
+                {
+                  "name": "BACKUP_PATH",
+                  "desc": "备份路径"
+                },
+                {
+                  "name": "BACKUP_CHAIN_PATH",
+                  "desc": "备份链路径"
+                }
+              ],
+              "notes": "依据：TDengine 官方备份恢复文档（CREATE FULL BACKUP / SHOW BACKUPS / taosd --restore）。全备与恢复为企业版功能，社区版不可用；恢复仅还原 mnode/vnode/snode 数据，恢复前务必先停写并做副本，需在 3.x 企业版实测核对。",
+              "id": "tdengine-012"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用",
+      "subcategories": [
+        {
+          "name": "集群",
+          "items": [
+            {
+              "title": "节点与副本状态",
+              "versions": "3.x",
+              "risk": "只读",
+              "desc": "SHOW DNODES / SHOW MNODES / SHOW VGROUPS",
+              "sql": "SHOW DNODES;\nSHOW MNODES;\nSHOW VGROUPS;\nSHOW CREATE DATABASE <DBNAME>;",
+              "params": [
+                {
+                  "name": "DBNAME",
+                  "desc": "数据库名"
+                }
+              ],
+              "notes": "依据：TDengine 官方架构文档（mnode 多副本 Raft、vgroup 副本组）与 Databases 文档（REPLICA 参数：社区版为 1 或 3，2 副本为 3.3.0.0+ 企业版）。副本数以 SHOW CREATE DATABASE 输出为准，需在 3.x 实测核对。",
+              "id": "tdengine-013"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "用户/安全",
+      "subcategories": [
+        {
+          "name": "用户",
+          "items": [
+            {
+              "title": "用户与授权",
+              "versions": "3.x",
+              "risk": "谨慎",
+              "desc": "SHOW USERS / CREATE USER",
+              "sql": "-- 1. 先查看现有用户（只读）：\nSHOW USERS;\n-- 2. 新建用户（模板）：\n-- DANGER: CREATE USER <USERNAME> PASS '<PASSWORD>';\n-- 3. 授权示例（语法按手册核对）：\n-- DANGER: GRANT WRITE ON <DBNAME> TO <USERNAME>;",
+              "params": [
+                {
+                  "name": "USERNAME",
+                  "desc": "用户名"
+                },
+                {
+                  "name": "PASSWORD",
+                  "desc": "密码"
+                },
+                {
+                  "name": "DBNAME",
+                  "desc": "数据库名"
+                }
+              ],
+              "notes": "依据：TDengine 官方文档（SHOW USERS / CREATE USER）。GRANT 的权限关键字与对象写法需在 3.x 实测核对；切勿在脚本里留真实密码。",
+              "id": "tdengine-014"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+-- shell: gs_dump <DBNAME> -p <PORT> -f <OUTFILE>.sql -U <USER>
+-- shell: gs_dump <DBNAME> -p <PORT> -n <SCHEMA> -f <OUTFILE>.sql
+-- shell: gs_dump <DBNAME> -p <PORT> -t <TABLE> -f <OUTFILE>.sql
+-- shell: gs_dumpall -p <PORT> -f <OUTFILE>.sql
+-- 恢复（文本格式用 gsql，归档格式用 gs_restore）：
+-- shell: gsql -d <DBNAME> -p <PORT> -f <OUTFILE>.sql

@@ -1,0 +1,274 @@
+{
+  "id": "goldendb",
+  "name": "GoldenDB",
+  "versions": "GoldenDB V6 分布式/集中式/混合部署",
+  "note": "中兴 GoldenDB V6：DN 为 MySQL 内核，CN/GTM/管理节点分布式架构；官方白皮书见 zte.com.cn，未找到公开 SQL 手册，未在真实环境跑过，见各条 notes",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "实例",
+          "items": [
+            {
+              "title": "实例版本 / 运行状态",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "只读",
+              "desc": "VERSION() / SHOW GLOBAL STATUS",
+              "sql": "SELECT VERSION() AS db_version;\nSHOW GLOBAL STATUS WHERE Variable_name IN ('Uptime', 'Threads_connected', 'Threads_running', 'Queries', 'Slow_queries');",
+              "params": [],
+              "notes": "依据：GoldenDB V6 技术白皮书（中兴通讯官方），DN 基于 MySQL 内核、兼容 MySQL 语法与协议。经 CN（计算节点/DBProxy）接入时返回的是 CN 侧逻辑版本还是 DN 版本、状态口径，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-001"
+            },
+            {
+              "title": "分片表定义检查",
+              "versions": "GoldenDB V6 分布式",
+              "risk": "只读",
+              "desc": "SHOW CREATE TABLE",
+              "sql": "SHOW CREATE TABLE <SCHEMA>.<TABLE>;",
+              "params": [
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "依据：GoldenDB V6 技术白皮书，支持 Range/Hash/List 三种水平分片规则、DUPLICATE 复制表、分片之上再做本地分区。SHOW CREATE TABLE 用于核对分片键与分片规则是否与设计一致，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-002"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "性能",
+          "items": [
+            {
+              "title": "InnoDB 缓冲池命中率",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "只读",
+              "desc": "performance_schema.global_status",
+              "sql": "SELECT ROUND((1 - (SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Innodb_buffer_pool_reads') / NULLIF((SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Innodb_buffer_pool_read_requests'), 0)) * 100, 2) AS hit_ratio_pct;",
+              "params": [],
+              "notes": "依据：GoldenDB DN 为 MySQL 内核，performance_schema.global_status 为 MySQL 标准视图。该查询应在 DN 上执行，CN 上不一定透传，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-003"
+            },
+            {
+              "title": "统计信息收集（ANALYZE TABLE）",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "谨慎",
+              "desc": "ANALYZE TABLE",
+              "sql": "-- 1. 先确认表统计信息是否陈旧（只读）：\nSELECT TABLE_NAME, TABLE_ROWS, AVG_ROW_LENGTH, DATA_LENGTH, INDEX_LENGTH, UPDATE_TIME\nFROM information_schema.TABLES\nWHERE TABLE_SCHEMA = '<SCHEMA>' AND TABLE_NAME = '<TABLE>';\n-- 2. 确认后再执行（建议非高峰）：\n-- DANGER: ANALYZE TABLE <SCHEMA>.<TABLE>;",
+              "params": [
+                {
+                  "name": "SCHEMA",
+                  "desc": "库名"
+                },
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "依据：GoldenDB DN 兼容 MySQL 语法。分布式表 ANALYZE 是否按分片逐个执行、是否阻塞业务，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-004"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "慢SQL Top（performance_schema 摘要）",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "只读",
+              "desc": "events_statements_summary_by_digest",
+              "sql": "SELECT DIGEST_TEXT, COUNT_STAR,\n  ROUND(SUM_TIMER_WAIT / 1000000000000, 2) AS total_sec,\n  ROUND(AVG_TIMER_WAIT / 1000000000000, 4) AS avg_sec,\n  SUM_ROWS_EXAMINED\nFROM performance_schema.events_statements_summary_by_digest\nWHERE DIGEST_TEXT IS NOT NULL\nORDER BY SUM_TIMER_WAIT DESC\nLIMIT 10;",
+              "params": [],
+              "notes": "依据：GoldenDB DN 为 MySQL 内核，performance_schema 为 MySQL 标准视图。经 CN 看到的是 CN 侧聚合还是单 DN 的摘要、是否需逐 DN 查，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-005"
+            },
+            {
+              "title": "执行计划（EXPLAIN）",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "只读",
+              "desc": "EXPLAIN",
+              "sql": "EXPLAIN SELECT * FROM <SCHEMA>.<TABLE> WHERE <CONDITION>;",
+              "params": [
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "表名"
+                },
+                {
+                  "name": "CONDITION",
+                  "desc": "WHERE 条件"
+                }
+              ],
+              "notes": "依据：GoldenDB DN 兼容 MySQL 语法，EXPLAIN 为 MySQL 标准命令。CN 会把 SQL 下发到各 DN 再汇总结果，跨分片 JOIN 的计划以 CN 侧为准，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-006"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "锁/会话",
+      "subcategories": [
+        {
+          "name": "锁",
+          "items": [
+            {
+              "title": "阻塞锁 / 长事务",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "只读",
+              "desc": "information_schema.innodb_trx",
+              "sql": "SELECT trx_id, trx_state, trx_started, trx_mysql_thread_id, trx_query, trx_rows_locked\nFROM information_schema.innodb_trx\nORDER BY trx_started\nLIMIT 20;",
+              "params": [],
+              "notes": "依据：GoldenDB DN 为 MySQL 内核，information_schema.innodb_trx 为 MySQL 标准视图。MySQL 8.0 已移除 information_schema.innodb_lock_waits，改查 performance_schema.data_lock_waits；DN 内核版本不同写法不同，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-007"
+            },
+            {
+              "title": "杀会话（KILL）",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "危险",
+              "desc": "KILL",
+              "sql": "-- 1. 先确认会话（只读）：\nSELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, INFO\nFROM information_schema.PROCESSLIST\nWHERE ID = <THREAD_ID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: KILL <THREAD_ID>;",
+              "params": [
+                {
+                  "name": "THREAD_ID",
+                  "desc": "会话 ID（PROCESSLIST 的 ID 列）"
+                }
+              ],
+              "notes": "依据：GoldenDB DN 兼容 MySQL 语法，KILL 为 MySQL 标准命令。跨分片事务的会话可能涉及多个 DN 与 GTM 协调，杀会话前务必确认业务影响，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-008"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间/存储",
+      "subcategories": [
+        {
+          "name": "空间",
+          "items": [
+            {
+              "title": "库空间使用率",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "只读",
+              "desc": "information_schema.TABLES",
+              "sql": "SELECT TABLE_SCHEMA,\n  ROUND(SUM(DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb,\n  ROUND(SUM(DATA_LENGTH) / 1024 / 1024, 2) AS data_mb,\n  ROUND(SUM(INDEX_LENGTH) / 1024 / 1024, 2) AS index_mb\nFROM information_schema.TABLES\nGROUP BY TABLE_SCHEMA\nORDER BY size_mb DESC;",
+              "params": [],
+              "notes": "依据：GoldenDB DN 为 MySQL 内核，information_schema.TABLES 为 MySQL 标准视图。经 CN 汇总还是单 DN 口径，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-009"
+            },
+            {
+              "title": "分片数据分布 / 倾斜检查",
+              "versions": "GoldenDB V6 分布式",
+              "risk": "只读",
+              "desc": "分片键 GROUP BY 计数",
+              "sql": "SELECT <SHARDKEY>, COUNT(*) AS row_cnt\nFROM <SCHEMA>.<TABLE>\nGROUP BY <SHARDKEY>\nORDER BY row_cnt DESC\nLIMIT 20;",
+              "params": [
+                {
+                  "name": "SHARDKEY",
+                  "desc": "分片键列"
+                },
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "分片表名"
+                }
+              ],
+              "notes": "依据：GoldenDB V6 技术白皮书，数据按分片键分布在不同分片组，支持在线新增分片与数据重分布。单分片行数悬殊即为倾斜，需重分布；分布口径需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-010"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "备份 / Binlog 状态检查",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "只读",
+              "desc": "SHOW BINARY LOGS / SHOW MASTER STATUS",
+              "sql": "SHOW BINARY LOGS;\nSHOW MASTER STATUS;\nSHOW VARIABLES LIKE 'binlog_format';",
+              "params": [],
+              "notes": "依据：GoldenDB V6 技术白皮书，支持逻辑备份与物理备份、按时间点恢复，备份通过 OMM/Insight 或 MySQL 生态工具执行，无单条 SQL 可查备份集；SHOW BINARY LOGS 只能看 binlog 清单，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-011"
+            },
+            {
+              "title": "时间点恢复演练清单",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "危险",
+              "desc": "OMM/Insight 恢复（无 SQL）",
+              "sql": "-- 1. 先确认备份与 binlog（只读，见 goldendb-011）。\n-- 2. 恢复为 OMM/Insight 操作（危险，先在测试集群演练）：\n-- DANGER: OMM/Insight → 备份恢复 → 选择备份集 → 按时间点恢复到目标集群，配合 LoadServer（LDS）做数据装载；恢复前先停写并做副本。",
+              "params": [],
+              "notes": "依据：GoldenDB V6 技术白皮书，支持按时间点恢复，LoadServer（LDS）负责数据装载与迁移，运维通过 Insight/OMM 执行。生产恢复前务必先在测试集群演练，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-012"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用/容灾",
+      "subcategories": [
+        {
+          "name": "容灾",
+          "items": [
+            {
+              "title": "分片组主备复制状态",
+              "versions": "GoldenDB V6 分布式",
+              "risk": "只读",
+              "desc": "SHOW REPLICA STATUS / SHOW SLAVE STATUS",
+              "sql": "SHOW REPLICA STATUS;\n-- DN 内核为 MySQL 5.7 时用：SHOW SLAVE STATUS;",
+              "params": [],
+              "notes": "依据：GoldenDB V6 技术白皮书，每个分片组（DBGroup）由一主多备组成，备机以强同步方式复制主库日志，主库故障时分片组内自动选举切换。SQL 只能在直连 DN 时看复制状态，CN 上不可见；主备切换走 Insight/OMM，不要直接在 DN 上改，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-013"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "用户/安全",
+      "subcategories": [
+        {
+          "name": "安全",
+          "items": [
+            {
+              "title": "用户列表 / 权限",
+              "versions": "GoldenDB V6 分布式/集中式",
+              "risk": "只读",
+              "desc": "mysql.user / SHOW GRANTS",
+              "sql": "SELECT User, Host FROM mysql.user ORDER BY User, Host;\nSHOW GRANTS FOR '<USER>'@'<HOST>';",
+              "params": [
+                {
+                  "name": "USER",
+                  "desc": "用户名"
+                },
+                {
+                  "name": "HOST",
+                  "desc": "主机（% 或 IP）"
+                }
+              ],
+              "notes": "依据：GoldenDB DN 为 MySQL 内核，mysql.user 为 MySQL 标准系统表。白皮书：一套物理集群可划分 sys_cluster 系统租户与多个业务租户，各租户元数据隔离；租户级账号以 OMM 为准，需在 GoldenDB V6 实测核对。",
+              "id": "goldendb-014"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
