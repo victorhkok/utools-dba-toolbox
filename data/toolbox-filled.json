@@ -1,0 +1,3032 @@
+{
+  "version": "0.2-filled",
+  "updated": "2026-11-24",
+  "total_items": 215,
+  "structure": "数据库 > 大类 > 小类 > 脚本 | 适用版本 | 风险（只读/谨慎/危险）",
+  "databases": [
+    {
+      "id": "oracle",
+      "name": "Oracle",
+      "versions": "11gR2 / 12c / 19c / 21c / 23ai",
+      "note": "你的主力，OCP 11g，RAC/DG/OGG",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例与版本",
+              "items": [
+                {
+                  "title": "实例状态 / 版本 / 启动时间",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$instance, v$database",
+                  "sql": "SELECT i.instance_name,\n       i.host_name,\n       i.version,\n       i.status,\n       i.startup_time,\n       d.name        AS db_name,\n       d.open_mode,\n       d.log_mode\nFROM   v$instance i,\n       v$database d;",
+                  "params": [],
+                  "notes": "v$instance/v$database 均需 SYSDBA 或 SELECT_CATALOG_ROLE 权限；RAC 下每节点各查一次。"
+                },
+                {
+                  "title": "监听与服务状态",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "lsnrctl status / srvctl status",
+                  "sql": "-- Shell / OS 命令（非 SQL，在数据库服务器上执行）：\n-- lsnrctl status\n-- srvctl status database -d <db_name>\n-- srvctl status listener\n-- crsctl check cluster -all        -- RAC 环境才有\n-- 另查数据库内注册的服务：\nSELECT name, network_name, failover_method\nFROM   dba_services\nORDER  BY name;",
+                  "params": [
+                    "<db_name>"
+                  ],
+                  "notes": "lsnrctl/srvctl 需在服务器 OS 执行，SQL*Plus 里跑不了；先确认 ORACLE_HOME/ORACLE_SID。"
+                },
+                {
+                  "title": "数据库 / PDB 列表",
+                  "versions": "12c+",
+                  "risk": "只读",
+                  "desc": "CDB+PDB，11g无PDB",
+                  "sql": "SELECT name, cdb, open_mode, log_mode\nFROM   v$database;\n\nSELECT con_id, name, open_mode, restricted, total_size\nFROM   v$pdbs\nORDER  BY con_id;",
+                  "params": [],
+                  "notes": "仅 12c+ 有 v$pdbs / CDB 概念，11g 跑第二条会报 ORA-00942；先查 v$database.cdb 确认是否 CDB。"
+                },
+                {
+                  "title": "无效对象清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_objects status=INVALID",
+                  "sql": "SELECT owner, object_type, COUNT(*) AS cnt\nFROM   dba_objects\nWHERE  status = 'INVALID'\nGROUP  BY owner, object_type\nORDER  BY cnt DESC;\n\n-- 明细（前 50）：\nSELECT *\nFROM   (SELECT owner, object_name, object_type, status, last_ddl_time\n        FROM   dba_objects\n        WHERE  status = 'INVALID'\n        ORDER  BY owner, object_type, object_name)\nWHERE  ROWNUM <= 50;",
+                  "params": [],
+                  "notes": "只列清单不自动编译；编译用 ALTER ... COMPILE，需先确认对象属主和依赖，生产慎做。"
+                },
+                {
+                  "title": "定时任务 / 作业状态",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_scheduler_jobs",
+                  "sql": "SELECT owner, job_name, job_type, state, enabled,\n       last_start_date, next_run_date, failure_count\nFROM   dba_scheduler_jobs\nWHERE  owner NOT IN ('SYS', 'SYSTEM')\nORDER  BY owner, job_name;",
+                  "params": [],
+                  "notes": "state=BROKEN/FAILURE 重点看；查单作业失败明细用 dba_scheduler_job_run_details。"
+                },
+                {
+                  "title": "告警日志近24h错误",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "需读alert log / ADRCI",
+                  "sql": "-- 1) 先查诊断目录（SQL）：\nSELECT name, value\nFROM   v$diag_info\nWHERE  name IN ('Diag Trace', 'Diag Alert', 'Diag Incident');\n\n-- 2) 再在服务器 OS 用 ADRCI（Shell）：\n-- adrci exec=\"set homepath diag/rdbms/<db_name>/<sid>; show alert -term -tail 200\"\n-- 3) 常见错误直接 grep alert 日志：\n-- grep -E \"ORA-|TNS-\" $ORACLE_BASE/diag/rdbms/<db_name>/<sid>/trace/alert_<sid>.log | tail -n 100",
+                  "params": [
+                    "<db_name>",
+                    "<sid>"
+                  ],
+                  "notes": "ADRCI 的 homepath 按实际 diag 路径填；alert 日志不在数据库里，SQL 查不到内容，只能查路径。"
+                }
+              ]
+            },
+            {
+              "name": "健康指标",
+              "items": [
+                {
+                  "title": "表空间使用率 Top",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": ">85%预警",
+                  "sql": "SELECT df.tablespace_name,\n       ROUND(df.total_mb, 2)                         AS total_mb,\n       ROUND(NVL(fs.free_mb, 0), 2)                 AS free_mb,\n       ROUND((df.total_mb - NVL(fs.free_mb, 0)) / df.total_mb * 100, 2) AS pct_used\nFROM   (SELECT tablespace_name, SUM(bytes) / 1024 / 1024 AS total_mb\n        FROM   dba_data_files\n        GROUP  BY tablespace_name) df\n       LEFT JOIN\n       (SELECT tablespace_name, SUM(bytes) / 1024 / 1024 AS free_mb\n        FROM   dba_free_space\n        GROUP  BY tablespace_name) fs\n       ON df.tablespace_name = fs.tablespace_name\nORDER  BY pct_used DESC;",
+                  "params": [],
+                  "notes": "使用率 >85% 预警，>95% 立即处理；临时表空间不在 dba_data_files 里，见“临时表空间使用”那条。"
+                },
+                {
+                  "title": "归档日志生成量 / 切换频率",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$archived_log",
+                  "sql": "SELECT TRUNC(first_time) AS day,\n       COUNT(*)             AS arch_count,\n       ROUND(SUM(blocks * block_size) / 1024 / 1024, 2) AS mb_generated\nFROM   v$archived_log\nWHERE  first_time >= SYSDATE - 7\nGROUP  BY TRUNC(first_time)\nORDER  BY day DESC;\n\n-- 日志切换次数（近 7 天，按天）：\nSELECT TRUNC(first_time) AS day, COUNT(*) AS switch_count\nFROM   v$log_history\nWHERE  first_time >= SYSDATE - 7\nGROUP  BY TRUNC(first_time)\nORDER  BY day DESC;",
+                  "params": [],
+                  "notes": "v$archived_log 只保留控制文件记录的归档，控制文件被覆盖后旧记录会丢；长期趋势以备份/监控为准。"
+                },
+                {
+                  "title": "临时表空间使用",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$tempseg_usage",
+                  "sql": "SELECT u.username,\n       s.sid,\n       s.serial#,\n       u.tablespace,\n       u.segtype,\n       u.blocks,\n       ROUND(u.blocks * 8192 / 1024 / 1024, 2) AS mb_used\nFROM   v$tempseg_usage u\n       JOIN v$session s ON u.session_addr = s.saddr\nORDER  BY u.blocks DESC;",
+                  "params": [],
+                  "notes": "块大小按 8K 估算，不同库块大小用 SELECT value FROM v$parameter WHERE name='db_block_size' 核对；无行返回说明当前无人用临时段。"
+                },
+                {
+                  "title": "UNDO 使用与保留",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$undostat",
+                  "sql": "SELECT tablespace_name, retention\nFROM   dba_tablespaces\nWHERE  contents = 'UNDO';\n\nSELECT TO_CHAR(begin_time, 'YYYY-MM-DD HH24:MI') AS begin_time,\n       undoblks, txncount, maxquerylen, tuned_undoretention\nFROM   v$undostat\nWHERE  begin_time >= SYSDATE - 1\nORDER  BY begin_time DESC;",
+                  "params": [],
+                  "notes": "tuned_undoretention 是自动调优后的建议保留秒数；ORA-01555 快照过旧先看 maxquerylen 和 UNDO 大小。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "AWR / ASH",
+              "items": [
+                {
+                  "title": "生成 AWR 快照 / 报告",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "awrrpt.sql，需Diagnostic Pack授权",
+                  "sql": "-- 1) 查已有快照（近 1 天）：\nSELECT snap_id, begin_interval_time, end_interval_time\nFROM   dba_hist_snapshot\nWHERE  begin_interval_time >= SYSDATE - 1\nORDER  BY snap_id DESC;\n\n-- 2) 手动建一个快照（SQL*Plus / PL/SQL）：\n-- EXEC DBMS_WORKLOAD_REPOSITORY.create_snapshot();\n\n-- 3) 生成报告（SQL*Plus，在服务器上执行，选上面查到的起止 snap_id）：\n-- @$ORACLE_HOME/rdbms/admin/awrrpt.sql\n-- 按提示输入：html/text、起止 snap_id、报告文件名",
+                  "params": [
+                    "<snap_id_start>",
+                    "<snap_id_end>"
+                  ],
+                  "notes": "AWR 需 Diagnostic Pack 授权，无授权不要用 dba_hist_*；create_snapshot 本身是写操作，虽列为只读条目，执行前确认授权。"
+                },
+                {
+                  "title": "ASH Top 等待事件",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$active_session_history",
+                  "sql": "SELECT *\nFROM   (SELECT event,\n               wait_class,\n               COUNT(*) AS samples,\n               ROUND(COUNT(*) * 100 / SUM(COUNT(*)) OVER (), 2) AS pct\n        FROM   v$active_session_history\n        WHERE  sample_time >= SYSDATE - 1 / 24\n          AND  event IS NOT NULL\n        GROUP  BY event, wait_class\n        ORDER  BY samples DESC)\nWHERE  ROWNUM <= 20;",
+                  "params": [],
+                  "notes": "v$active_session_history 是 1 秒采样，COUNT(*) 不是精确等待秒数，只能看占比；同样需 Diagnostic Pack 授权。"
+                },
+                {
+                  "title": "DB Time / 负载画像",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "AWR Load Profile",
+                  "sql": "SELECT stat_name,\n       ROUND(value / 1000000, 2) AS seconds\nFROM   v$sys_time_model\nWHERE  stat_name IN ('DB time', 'DB CPU', 'background cpu time',\n                     'sql execute elapsed time', 'parse time elapsed')\nORDER  BY value DESC;\n\n-- 另查 AWR Load Profile 需 awrrpt.sql 报告里的 Load Profile 一节，本条只给 DB Time 总量。",
+                  "params": [],
+                  "notes": "DB time 是所有前台会话 CPU+等待之和，可大于挂钟时间；DB time / 挂钟时间 ≈ 平均活跃会话数。"
+                },
+                {
+                  "title": "SGA / PGA 使用与建议",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sga, v$pga_target_advice",
+                  "sql": "SELECT name, ROUND(value / 1024 / 1024, 2) AS mb\nFROM   v$sga;\n\nSELECT pga_target_for_estimate / 1024 / 1024 AS pga_target_mb,\n       estd_pga_cache_hit_percentage,\n       estd_overalloc_count\nFROM   v$pga_target_advice\nORDER  BY pga_target_for_estimate;\n\nSELECT name, value\nFROM   v$pgastat\nWHERE  name IN ('total PGA allocated', 'total PGA inuse', 'maximum PGA allocated');",
+                  "params": [],
+                  "notes": "v$pga_target_advice 只在 PGA_AGGREGATE_TARGET 非 0 时有意义；SGA 改参数要重启或 ALTER SYSTEM，勿直接按建议值改生产。"
+                }
+              ]
+            },
+            {
+              "name": "缓存与统计",
+              "items": [
+                {
+                  "title": "Buffer Cache 命中率",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sysstat",
+                  "sql": "SELECT ROUND((1 - (SELECT value FROM v$sysstat WHERE name = 'physical reads')\n                    / NULLIF((SELECT value FROM v$sysstat WHERE name = 'db block gets')\n                             + (SELECT value FROM v$sysstat WHERE name = 'consistent gets'), 0)) * 100, 2) AS buffer_hit_pct\nFROM   dual;\n\nSELECT name, value\nFROM   v$sysstat\nWHERE  name IN ('db block gets', 'consistent gets', 'physical reads', 'physical reads cache')\nORDER  BY name;",
+                  "params": [],
+                  "notes": "命中率是自启动累计值，重启后清零；单看命中率不够，全表扫描多的库命中率也可能虚高，要结合 Top SQL 看。"
+                },
+                {
+                  "title": "Library Cache / 共享池",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$librarycache",
+                  "sql": "SELECT namespace, gets, gethits,\n       ROUND(gethits / NULLIF(gets, 0) * 100, 2) AS gethit_pct,\n       pins, pinhits,\n       ROUND(pinhits / NULLIF(pins, 0) * 100, 2) AS pinhit_pct,\n       reloads, invalidations\nFROM   v$librarycache\nORDER  BY namespace;",
+                  "params": [],
+                  "notes": "reloads/invalidations 持续增长说明硬解析或对象频繁失效；先查共享池和绑定变量，不要直接调大 shared_pool。"
+                },
+                {
+                  "title": "表 / 索引统计信息是否过期",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_tab_statistics",
+                  "sql": "SELECT *\nFROM   (SELECT owner, table_name, num_rows, last_analyzed, stale_stats\n        FROM   dba_tab_statistics\n        WHERE  stale_stats = 'YES'\n          AND  owner NOT IN ('SYS', 'SYSTEM', 'DBSNMP')\n        ORDER  BY last_analyzed NULLS FIRST)\nWHERE  ROWNUM <= 50;",
+                  "params": [],
+                  "notes": "stale_stats='YES' 只表示 10% 行变化后未收集，不等于执行计划一定差；先看具体表的慢 SQL 再决定收集。"
+                },
+                {
+                  "title": "收集统计信息（DBMS_STATS）",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "生产建议非高峰执行",
+                  "sql": "-- 先查（只读确认）：\nSELECT owner, table_name, last_analyzed, stale_stats\nFROM   dba_tab_statistics\nWHERE  owner = '<schema>'\n  AND  table_name = '<table_name>';\n\n-- 再执行（谨慎：建议非高峰、测试库先跑）：\n-- EXEC DBMS_STATS.gather_table_stats(ownname => '<schema>', tabname => '<table_name>', estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE, cascade => TRUE, degree => 4);\n-- 整库模式：\n-- EXEC DBMS_STATS.gather_schema_stats(ownname => '<schema>', estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE, cascade => TRUE, degree => 4);",
+                  "params": [
+                    "<schema>",
+                    "<table_name>"
+                  ],
+                  "notes": "生产高峰不要全库收集；cascade=>TRUE 会连索引一起收集，degree 按 CPU 核数填，勿填过大。"
+                }
+              ]
+            },
+            {
+              "name": "索引",
+              "items": [
+                {
+                  "title": "未使用索引清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$object_usage，需先监控",
+                  "sql": "SELECT index_name, table_name, monitoring, used,\n       start_monitoring, end_monitoring\nFROM   v$object_usage\nWHERE  used = 'NO'\nORDER  BY table_name, index_name;\n\n-- 开启监控（需先执行，跑一个业务周期后再查上条）：\n-- ALTER INDEX <owner>.<index_name> MONITORING USAGE;",
+                  "params": [
+                    "<owner>",
+                    "<index_name>"
+                  ],
+                  "notes": "v$object_usage 只有开过 MONITORING USAGE 的索引才有行；没监控过查不到不等于没用，勿直接删索引。"
+                },
+                {
+                  "title": "缺失索引建议（SQL Tuning）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "DBMS_SQLTUNE",
+                  "sql": "-- 1) 建调优任务（需 Tuning Pack 授权）：\n-- DECLARE l_task VARCHAR2(30);\n-- BEGIN\n--   l_task := DBMS_SQLTUNE.create_tuning_task(sql_id => '<sql_id>', scope => DBMS_SQLTUNE.scope_comprehensive, time_limit => 600);\n--   DBMS_SQLTUNE.execute_tuning_task(task_name => l_task);\n-- END;\n-- /\n\n-- 2) 查任务状态：\nSELECT task_id, task_name, status, created\nFROM   dba_advisor_tasks\nWHERE  advisor_name = 'SQL Tuning Advisor'\nORDER  BY created DESC;\n\n-- 3) 看报告（把 <task_name> 换成上条查到的）：\n-- SELECT DBMS_SQLTUNE.report_tuning_task('<task_name>') FROM dual;",
+                  "params": [
+                    "<sql_id>",
+                    "<task_name>"
+                  ],
+                  "notes": "把握一般：DBMS_SQLTUNE 需 Tuning Pack 授权，且 create_tuning_task 的返回值用法在不同版本有细节差异，生产先在测试库跑通再用。"
+                },
+                {
+                  "title": "索引碎片 / 重建评估",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "重建前评估锁与空间",
+                  "sql": "SELECT *\nFROM   (SELECT owner, index_name, table_name, blevel, leaf_blocks,\n               distinct_keys, clustering_factor,\n               ROUND(leaf_blocks * 8192 / 1024 / 1024, 2) AS leaf_mb\n        FROM   dba_indexes\n        WHERE  owner NOT IN ('SYS', 'SYSTEM')\n        ORDER  BY leaf_blocks DESC)\nWHERE  ROWNUM <= 20;\n\n-- 重建模板（谨慎：先评估，勿直接执行）：\n-- ALTER INDEX <owner>.<index_name> REBUILD ONLINE;",
+                  "params": [
+                    "<owner>",
+                    "<index_name>"
+                  ],
+                  "notes": "blevel>4 或 leaf_blocks 明显偏大才考虑重建；ONLINE 重建仍需空间和锁评估，碎片不高时重建收益很小。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位慢SQL",
+              "items": [
+                {
+                  "title": "Top SQL by Elapsed Time",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sql / AWR Top SQL",
+                  "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               ROUND(elapsed_time / 1000000, 2) AS elapsed_sec,\n               ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n               buffer_gets, disk_reads,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY elapsed_time DESC)\nWHERE  ROWNUM <= 20;",
+                  "params": [],
+                  "notes": "elapsed_time 单位是微秒；v$sql 是共享池累计值，实例重启后清零，长期 Top 以 AWR 为准。"
+                },
+                {
+                  "title": "Top SQL by Buffer Gets",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "逻辑读最高",
+                  "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               buffer_gets,\n               ROUND(buffer_gets / NULLIF(executions, 0), 0) AS gets_per_exec,\n               ROUND(elapsed_time / 1000000, 2) AS elapsed_sec,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY buffer_gets DESC)\nWHERE  ROWNUM <= 20;",
+                  "params": [],
+                  "notes": "逻辑读高不一定是慢 SQL，要结合 avg_sec 和执行次数看；先看 gets_per_exec 再决定是否优化。"
+                },
+                {
+                  "title": "Top SQL by Executions",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "执行次数最多",
+                  "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n               buffer_gets, disk_reads,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY executions DESC)\nWHERE  ROWNUM <= 20;",
+                  "params": [],
+                  "notes": "执行次数多、单次不慢的 SQL 也值得优化，累计耗时可能最大；注意 v$sql_text 可能被截断。"
+                },
+                {
+                  "title": "近1h 慢SQL（执行>5s）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sql + elapsed",
+                  "sql": "SELECT sql_id, executions,\n       ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n       ROUND(elapsed_time / 1000000, 2) AS total_sec,\n       buffer_gets,\n       SUBSTR(sql_text, 1, 200) AS sql_text\nFROM   v$sql\nWHERE  last_active_time >= SYSDATE - 1 / 24\n  AND  executions > 0\n  AND  elapsed_time / executions > 5000000\nORDER  BY avg_sec DESC;",
+                  "params": [],
+                  "notes": "5 秒阈值是 elapsed_time/executions > 5,000,000 微秒；last_active_time 是最后活跃时间，不是首次执行时间。"
+                }
+              ]
+            },
+            {
+              "name": "执行计划",
+              "items": [
+                {
+                  "title": "查看执行计划（EXPLAIN PLAN）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "DBMS_XPLAN",
+                  "sql": "-- 模板：把 <你的SQL> 换成要分析的语句（不带分号结尾的分号外写法见下）\nEXPLAIN PLAN FOR\nSELECT * FROM <schema>.<table_name> WHERE <condition>;\n\nSELECT * FROM TABLE(DBMS_XPLAN.display);",
+                  "params": [
+                    "<schema>",
+                    "<table_name>",
+                    "<condition>"
+                  ],
+                  "notes": "EXPLAIN PLAN 是预估计划，不代表真实执行；要真实行数用 DISPLAY_CURSOR 或加 GATHER_PLAN_STATISTICS Hint。"
+                },
+                {
+                  "title": "真实执行计划（DBMS_XPLAN.DISPLAY_CURSOR）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "带A-Rows / Buffers",
+                  "sql": "SELECT * FROM TABLE(DBMS_XPLAN.display_cursor('<sql_id>', <child_number>, 'ALLSTATS LAST'));\n\n-- 查该 SQL 的 child_number：\nSELECT sql_id, child_number, executions, plan_hash_value\nFROM   v$sql\nWHERE  sql_id = '<sql_id>'\nORDER  BY child_number;",
+                  "params": [
+                    "<sql_id>",
+                    "<child_number>"
+                  ],
+                  "notes": "'ALLSTATS LAST' 只有 SQL 带 /*+ GATHER_PLAN_STATISTICS */ 或 statistics_level=ALL 时才有 A-Rows/Buffers，否则只显示预估。"
+                },
+                {
+                  "title": "全表扫描 SQL 清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "TABLE ACCESS FULL",
+                  "sql": "SELECT p.sql_id,\n       COUNT(*) AS full_scan_ops,\n       MAX(s.executions) AS executions,\n       SUBSTR(MAX(s.sql_text), 1, 200) AS sql_text\nFROM   v$sql_plan p\n       JOIN v$sql s ON p.sql_id = s.sql_id AND p.child_number = s.child_number\nWHERE  p.operation = 'TABLE ACCESS'\n  AND  p.options = 'FULL'\nGROUP  BY p.sql_id\nORDER  BY full_scan_ops DESC;",
+                  "params": [],
+                  "notes": "v$sql_plan 只保留共享池里的计划，重启后丢失；小表全表扫描是正常的，先看表大小和执行次数再优化。"
+                },
+                {
+                  "title": "绑定变量窥探 / 直方图检查",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sql_bind_capture",
+                  "sql": "SELECT sql_id, name, position, datatype_string, value_string, last_captured\nFROM   v$sql_bind_capture\nWHERE  sql_id = '<sql_id>'\nORDER  BY position;\n\n-- 直方图（只列有直方图的列）：\nSELECT owner, table_name, column_name, histogram, num_distinct\nFROM   dba_tab_col_statistics\nWHERE  histogram <> 'NONE'\n  AND  owner = '<schema>'\nORDER  BY table_name, column_name;",
+                  "params": [
+                    "<sql_id>",
+                    "<schema>"
+                  ],
+                  "notes": "v$sql_bind_capture 只保留最近一次捕获的绑定值，不代表每次执行的值；直方图过期会导致绑定窥探失真。"
+                }
+              ]
+            },
+            {
+              "name": "优化手段",
+              "items": [
+                {
+                  "title": "SQL Profile / Baseline 建议",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "SQL Tuning Advisor",
+                  "sql": "-- 1) 先跑调优任务并看报告（见“缺失索引建议”那条，任务名换成实际值）：\n-- SELECT DBMS_SQLTUNE.report_tuning_task('<task_name>') FROM dual;\n\n-- 2) 查已有 Profile / Baseline：\nSELECT name, type, status, created\nFROM   dba_sql_profiles\nORDER  BY created DESC;\n\nSELECT sql_handle, plan_name, enabled, accepted, origin\nFROM   dba_sql_plan_baselines\nORDER  BY created DESC;\n\n-- 3) 接受 Profile 模板（谨慎：先在测试库验证）：\n-- EXEC DBMS_SQLTUNE.accept_sql_profile(task_name => '<task_name>', name => '<profile_name>');",
+                  "params": [
+                    "<task_name>",
+                    "<profile_name>"
+                  ],
+                  "notes": "接受 Profile 会改变执行计划，生产先在测试库验证；Baseline 需先用 DBMS_SPM.load_plans_from_cursor_cache 加载。"
+                },
+                {
+                  "title": "自动索引建议（19c+）",
+                  "versions": "19c+",
+                  "risk": "谨慎",
+                  "desc": "DBMS_AUTO_INDEX",
+                  "sql": "-- 查自动索引配置：\nSELECT parameter_name, parameter_value\nFROM   dba_auto_index_config\nORDER  BY parameter_name;\n\n-- 查已自动创建的索引：\nSELECT index_name, table_owner, table_name, auto\nFROM   dba_indexes\nWHERE  auto = 'YES'\nORDER  BY table_name;\n\n-- 查最近自动索引活动报告：\n-- SELECT DBMS_AUTO_INDEX.report_last_activity() FROM dual;",
+                  "params": [],
+                  "notes": "把握一般：DBA_AUTO_INDEX_CONFIG 的列名/参数名在 19c 各补丁间有细节差异，且自动索引默认不开启；本条先以查询为准，开启前务必在测试库核对视图定义。"
+                },
+                {
+                  "title": "Hint 改写模板",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "/*+ INDEX / PARALLEL */ 仅模板",
+                  "sql": "-- 模板（谨慎：Hint 只在确认执行计划走偏时用，先在测试库对比前后计划）：\n-- SELECT /*+ INDEX(t <index_name>) */ * FROM <schema>.<table_name> t WHERE <condition>;\n-- SELECT /*+ PARALLEL(t, 4) */ * FROM <schema>.<table_name> t WHERE <condition>;\n-- SELECT /*+ LEADING(a b) USE_HASH(b) */ * FROM <schema>.<table_a> a, <schema>.<table_b> b WHERE a.id = b.id;\n\n-- 查当前带 Hint 的 SQL（前 20）：\nSELECT sql_id, SUBSTR(sql_text, 1, 200) AS sql_text\nFROM   v$sql\nWHERE  sql_text LIKE '%/*+%'\n  AND  ROWNUM <= 20;",
+                  "params": [
+                    "<schema>",
+                    "<table_name>",
+                    "<index_name>",
+                    "<condition>"
+                  ],
+                  "notes": "Hint 写错表别名/索引名会被优化器静默忽略；改完务必用 DISPLAY_CURSOR 确认计划真的变了。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话 / 等待",
+          "subcategories": [
+            {
+              "name": "锁与阻塞",
+              "items": [
+                {
+                  "title": "当前阻塞锁链",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$lock + v$session blocking",
+                  "sql": "SELECT sid, serial#, username, machine, program, status,\n       blocking_session, blocking_session_serial#,\n       event, sql_id,\n       ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\nFROM   v$session\nWHERE  blocking_session IS NOT NULL\n   OR  sid IN (SELECT blocking_session FROM v$session WHERE blocking_session IS NOT NULL)\nORDER  BY blocking_session NULLS FIRST, sid;\n\n-- 锁详情（v$lock）：\nSELECT l.sid, l.type, l.lmode, l.request, l.block, s.username\nFROM   v$lock l\n       JOIN v$session s ON l.sid = s.sid\nWHERE  l.block = 1 OR l.request > 0\nORDER  BY l.sid;",
+                  "params": [],
+                  "notes": "blocking_session 为空不代表没锁，可能是行锁在等 TX；先找根阻塞者（blocking_session 为空的那行），不要先杀等待者。"
+                },
+                {
+                  "title": "死锁历史（ORA-00060）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "alert log / trace",
+                  "sql": "-- 1) 查诊断目录（SQL）：\nSELECT name, value\nFROM   v$diag_info\nWHERE  name IN ('Diag Trace', 'Diag Alert');\n\n-- 2) 在服务器 OS 上 grep alert 日志（Shell）：\n-- grep -i \"ORA-00060\" $ORACLE_BASE/diag/rdbms/<db_name>/<sid>/trace/alert_<sid>.log | tail -n 20\n-- 3) 找到死锁 trace 文件名（alert 日志里 Deadlock graph 一节会给 trace 文件路径，再用 vi / less 打开看）",
+                  "params": [
+                    "<db_name>",
+                    "<sid>"
+                  ],
+                  "notes": "死锁信息不在 v$ 视图里，只能看 alert 日志和 trace 文件；本条 SQL 只能定位日志路径，不能直接查出死锁 SQL。"
+                },
+                {
+                  "title": "行锁等待详情",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$session + row_wait",
+                  "sql": "SELECT s.sid, s.serial#, s.username, s.event, s.seconds_in_wait,\n       s.row_wait_obj#, s.row_wait_file#, s.row_wait_block#, s.row_wait_row#,\n       o.object_name, o.object_type\nFROM   v$session s\n       LEFT JOIN dba_objects o ON o.object_id = s.row_wait_obj#\nWHERE  s.event LIKE 'enq: TX%'\n   OR  s.wait_class = 'Application'\nORDER  BY s.seconds_in_wait DESC;",
+                  "params": [],
+                  "notes": "row_wait_* 只在会话正在等行锁时有值，锁释放后就没了；要定位行内容需按 file#/block#/row# 再查表，生产慎做。"
+                },
+                {
+                  "title": "杀会话（ALTER SYSTEM KILL）",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "先确认业务影响",
+                  "sql": "-- 第 1 步：先确认要杀的会话（只读）：\nSELECT sid, serial#, username, machine, program, status, sql_id, event\nFROM   v$session\nWHERE  sid = <sid>\n  AND  serial# = <serial#>;\n\n-- 第 2 步：确认无误后再执行（DANGER：会中断业务会话，RAC 需加 @inst_id）：\n-- ALTER SYSTEM KILL SESSION '<sid>,<serial#>' IMMEDIATE;\n-- RAC 写法：\n-- ALTER SYSTEM KILL SESSION '<sid>,<serial#>,@<inst_id>' IMMEDIATE;",
+                  "params": [
+                    "<sid>",
+                    "<serial#>",
+                    "<inst_id>"
+                  ],
+                  "notes": "DANGER：先确认 sid+serial# 对应的是目标会话而非后台进程；KILL 后会话可能要等 PMON 清理回滚，勿重复 KILL。"
+                }
+              ]
+            },
+            {
+              "name": "会话与等待",
+              "items": [
+                {
+                  "title": "活跃会话 Top",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$session status=ACTIVE",
+                  "sql": "SELECT *\nFROM   (SELECT sid, serial#, username, machine, program, status,\n               event, sql_id,\n               ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\n        FROM   v$session\n        WHERE  status = 'ACTIVE'\n          AND  type = 'USER'\n        ORDER  BY logon_time)\nWHERE  ROWNUM <= 20;",
+                  "params": [],
+                  "notes": "ACTIVE 只表示此刻在跑 SQL，不等于长耗时；结合 sql_id 和 event 看，不要只按 logon_time 排序就杀。"
+                },
+                {
+                  "title": "等待事件 Top 10",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$system_event",
+                  "sql": "SELECT *\nFROM   (SELECT event, total_waits,\n               ROUND(time_waited / 100, 2) AS waited_sec,\n               ROUND(time_waited_micro / 1000000, 2) AS waited_sec_micro,\n               total_timeouts\n        FROM   v$system_event\n        WHERE  event NOT LIKE 'SQL*Net%'\n          AND  event NOT LIKE 'rdbms ipc%'\n        ORDER  BY time_waited DESC)\nWHERE  ROWNUM <= 10;",
+                  "params": [],
+                  "notes": "time_waited 单位是百分之一秒，time_waited_micro 是微秒，两者不要混用；idle 类事件已过滤，仍需结合 ASH 看。"
+                },
+                {
+                  "title": "长运行会话（>30min）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$session + sql",
+                  "sql": "SELECT sid, serial#, username, sql_id, event,\n       last_call_et,\n       ROUND(last_call_et / 60, 1) AS mins_running,\n       ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\nFROM   v$session\nWHERE  status = 'ACTIVE'\n  AND  type = 'USER'\n  AND  last_call_et > 1800\nORDER  BY last_call_et DESC;",
+                  "params": [],
+                  "notes": "last_call_et 是当前调用已持续秒数，不是整个会话时长；>1800 秒即 30 分钟，勿把空闲会话（last_call_et 大但 status=INACTIVE）算进来。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间 / 存储",
+          "subcategories": [
+            {
+              "name": "表空间",
+              "items": [
+                {
+                  "title": "表空间扩容（ADD DATAFILE）",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "先查磁盘余量",
+                  "sql": "-- 第 1 步：先查表空间和磁盘（只读）：\nSELECT tablespace_name, file_name,\n       ROUND(bytes / 1024 / 1024, 2) AS mb,\n       autoextensible,\n       ROUND(maxbytes / 1024 / 1024, 2) AS max_mb\nFROM   dba_data_files\nWHERE  tablespace_name = '<tablespace_name>'\nORDER  BY file_id;\n\n-- 第 2 步：确认磁盘余量（Shell：df -h <datafile_dir>），确认后再执行（DANGER）：\n-- ALTER TABLESPACE <tablespace_name> ADD DATAFILE '<datafile_path>' SIZE 1G AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED;",
+                  "params": [
+                    "<tablespace_name>",
+                    "<datafile_path>",
+                    "<datafile_dir>"
+                  ],
+                  "notes": "DANGER：先确认磁盘余量和文件路径权限；SIZE/MAXSIZE 按实际剩余空间填，不要照抄 1G/UNLIMITED。"
+                },
+                {
+                  "title": "数据文件 / 自动扩展状态",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_data_files",
+                  "sql": "SELECT tablespace_name, file_name,\n       ROUND(bytes / 1024 / 1024, 2) AS mb,\n       ROUND(maxbytes / 1024 / 1024, 2) AS max_mb,\n       autoextensible, increment_by\nFROM   dba_data_files\nORDER  BY tablespace_name, file_id;",
+                  "params": [],
+                  "notes": "maxbytes=0 表示未设上限或不可扩展，要结合 autoextensible 看；increment_by 单位是块，不是 MB。"
+                },
+                {
+                  "title": "段增长 Top 20",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_segments",
+                  "sql": "SELECT *\nFROM   (SELECT owner, segment_name, segment_type, tablespace_name,\n               ROUND(bytes / 1024 / 1024, 2) AS mb\n        FROM   dba_segments\n        ORDER  BY bytes DESC)\nWHERE  ROWNUM <= 20;",
+                  "params": [],
+                  "notes": "dba_segments 是当前大小，不是增长量；要增长趋势需定期快照对比，或查 dba_hist_seg_stat（需 Diagnostic Pack）。"
+                },
+                {
+                  "title": "大表 / 大索引清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "按MB排序",
+                  "sql": "SELECT *\nFROM   (SELECT owner, segment_name, segment_type, tablespace_name,\n               ROUND(bytes / 1024 / 1024, 2) AS mb\n        FROM   dba_segments\n        WHERE  segment_type IN ('TABLE', 'INDEX')\n        ORDER  BY bytes DESC)\nWHERE  ROWNUM <= 20;",
+                  "params": [],
+                  "notes": "只按段大小排，分区表会拆成多个段；要整表大小需按 segment_name 去掉分区后缀汇总。"
+                },
+                {
+                  "title": "回收站清理（PURGE）",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "DROP 后恢复会失效",
+                  "sql": "SELECT owner, object_name, original_name, type, ts_name, droptime,\n       ROUND(space * 8192 / 1024 / 1024, 2) AS mb\nFROM   dba_recyclebin\nORDER  BY droptime DESC;\n\n-- 清理模板（谨慎：PURGE 后无法 FLASHBACK 恢复）：\n-- PURGE TABLE <owner>.<object_name>;\n-- PURGE RECYCLEBIN;",
+                  "params": [
+                    "<owner>",
+                    "<object_name>"
+                  ],
+                  "notes": "PURGE 后 DROP 的表无法再闪回恢复；先确认 droptime 和 original_name 是要删的表，再执行。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "RMAN",
+              "items": [
+                {
+                  "title": "RMAN 全量备份命令",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "BACKUP DATABASE PLUS ARCHIVELOG",
+                  "sql": "-- RMAN 命令（在 RMAN 提示符或 rman target / @脚本 里执行）：\nRUN {\n  ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '<backup_dir>/%d_%T_%U.bak';\n  BACKUP DATABASE PLUS ARCHIVELOG;\n  DELETE NOPROMPT OBSOLETE;\n  RELEASE CHANNEL c1;\n}",
+                  "params": [
+                    "<backup_dir>"
+                  ],
+                  "notes": "PLUS ARCHIVELOG 会先切归档再备份；DELETE OBSOLETE 按保留策略删旧备份，执行前先 SHOW RETENTION POLICY 确认。"
+                },
+                {
+                  "title": "RMAN 增量 0/1 级备份",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "Level 0/1 + 归档",
+                  "sql": "-- 0 级（全量基准，含归档）：\nRUN {\n  ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '<backup_dir>/%d_%T_L0_%U.bak';\n  BACKUP INCREMENTAL LEVEL 0 DATABASE PLUS ARCHIVELOG;\n  RELEASE CHANNEL c1;\n}\n\n-- 1 级（差异增量，日常跑）：\n-- RUN {\n--   ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '<backup_dir>/%d_%T_L1_%U.bak';\n--   BACKUP INCREMENTAL LEVEL 1 DATABASE PLUS ARCHIVELOG;\n--   RELEASE CHANNEL c1;\n-- }",
+                  "params": [
+                    "<backup_dir>"
+                  ],
+                  "notes": "0 级是 1 级的基准，1 级恢复要依赖最近的 0 级；先做 0 级再做 1 级，不要只跑 1 级。"
+                },
+                {
+                  "title": "RMAN 备份集 / 保留策略检查",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "LIST BACKUP / REPORT",
+                  "sql": "-- RMAN 命令（只读检查）：\n-- LIST BACKUP SUMMARY;\n-- LIST BACKUP OF DATABASE SUMMARY;\n-- SHOW RETENTION POLICY;\n-- SHOW ALL;\n-- REPORT OBSOLETE;\n-- REPORT NEED BACKUP;",
+                  "params": [],
+                  "notes": "LIST/REPORT 是 RMAN 命令不是 SQL，在 SQL*Plus 里跑不了；REPORT OBSOLETE 只报告不删除，删除用 DELETE OBSOLETE。"
+                },
+                {
+                  "title": "RMAN 恢复演练清单",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "测试库演练，勿在生产直接跑",
+                  "sql": "-- 演练清单（只在测试库/演练环境执行，勿在生产直接跑）：\n-- 1. LIST BACKUP SUMMARY;              -- 确认最近一次全备+归档都在\n-- 2. SHOW RETENTION POLICY;            -- 确认保留策略\n-- 3. RESTORE DATABASE PREVIEW;         -- 预演恢复，不真正写文件\n-- 4. VALIDATE DATABASE;                -- 校验备份可读\n-- 5. RESTORE DATABASE; RECOVER DATABASE; ALTER DATABASE OPEN RESETLOGS;\n--    -- 第 5 步只在演练库执行，生产恢复按实际故障场景走，勿照抄 RESETLOGS",
+                  "params": [],
+                  "notes": "把握一般：本条是演练清单不是单条可执行 SQL，RESTORE/RECOVER 的具体语法随场景（全库/表空间/时间点）而变，演练前先做全备。"
+                }
+              ]
+            },
+            {
+              "name": "闪回与 PITR",
+              "items": [
+                {
+                  "title": "闪回查询（AS OF TIMESTAMP）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "需UNDO保留",
+                  "sql": "-- 查 1 小时前的数据（模板）：\nSELECT * FROM <schema>.<table_name> AS OF TIMESTAMP (SYSDATE - 1 / 24) WHERE ROWNUM <= 20;\n\n-- 先确认 UNDO 能保留多久（只读）：\nSELECT TO_CHAR(begin_time, 'YYYY-MM-DD HH24:MI') AS begin_time,\n       tuned_undoretention, maxquerylen\nFROM   v$undostat\nWHERE  begin_time >= SYSDATE - 1\nORDER  BY begin_time DESC;",
+                  "params": [
+                    "<schema>",
+                    "<table_name>"
+                  ],
+                  "notes": "超过 UNDO 保留期会报 ORA-01555；闪回查询只能读，不能直接 UPDATE 回去，要恢复需 INSERT SELECT。"
+                },
+                {
+                  "title": "闪回表（FLASHBACK TABLE）",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "需行移动开启",
+                  "sql": "-- 第 1 步：先确认行移动是否开启（只读）：\nSELECT owner, table_name, row_movement\nFROM   dba_tables\nWHERE  owner = '<schema>'\n  AND  table_name = '<table_name>';\n\n-- 第 2 步：确认后再执行（DANGER：会回退整表到指定时间点）：\n-- ALTER TABLE <schema>.<table_name> ENABLE ROW MOVEMENT;\n-- FLASHBACK TABLE <schema>.<table_name> TO TIMESTAMP TO_TIMESTAMP('<yyyy-mm-dd hh24:mi:ss>', 'YYYY-MM-DD HH24:MI:SS');",
+                  "params": [
+                    "<schema>",
+                    "<table_name>",
+                    "<yyyy-mm-dd hh24:mi:ss>"
+                  ],
+                  "notes": "DANGER：需先 ENABLE ROW MOVEMENT；闪回表会回退该时间点之后的所有 DML，执行前先闪回查询确认数据。"
+                },
+                {
+                  "title": "RMAN 表级 PITR",
+                  "versions": "12c+",
+                  "risk": "危险",
+                  "desc": "12c+支持，4-12h",
+                  "sql": "-- 12c+ 才支持 RECOVER TABLE，先确认版本和备份（只读）：\n-- SELECT * FROM v$version;\n-- LIST BACKUP OF TABLE <schema>.<table_name>;\n\n-- 恢复模板（DANGER：只在演练/恢复场景执行，12c+）：\n-- RECOVER TABLE <schema>.<table_name>\n--   UNTIL TIME \"TO_DATE('<yyyy-mm-dd hh24:mi:ss>', 'YYYY-MM-DD HH24:MI:SS')\"\n--   AUXILIARY DESTINATION '<aux_dir>';",
+                  "params": [
+                    "<schema>",
+                    "<table_name>",
+                    "<yyyy-mm-dd hh24:mi:ss>",
+                    "<aux_dir>"
+                  ],
+                  "notes": "仅 12c+ 支持，11g 跑会报错；AUXILIARY DESTINATION 需有足够空间放辅助实例，恢复耗时按表大小估算。"
+                },
+                {
+                  "title": "块损坏 BMR 恢复",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "BLOCKRECOVER",
+                  "sql": "-- 第 1 步：先查坏块（只读）：\nSELECT file#, block#, blocks, corruption_type\nFROM   v$database_block_corruption\nORDER  BY file#, block#;\n\n-- 第 2 步：校验备份（RMAN）：\n-- VALIDATE DATABASE;\n\n-- 第 3 步：块恢复模板（DANGER：需有备份，确认 file#/block# 后再执行）：\n-- BLOCKRECOVER DATAFILE <file#> BLOCK <block#>;",
+                  "params": [
+                    "<file#>",
+                    "<block#>"
+                  ],
+                  "notes": "DANGER：v$database_block_corruption 为空不代表没坏块，要 VALIDATE 才准；BLOCKRECOVER 需 RMAN 备份，没有备份无法恢复。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用 / 容灾",
+          "subcategories": [
+            {
+              "name": "RAC",
+              "items": [
+                {
+                  "title": "RAC 节点 / 实例状态",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "srvctl / crsctl",
+                  "sql": "-- SQL（gv$instance，各节点一行）：\nSELECT inst_id, instance_name, host_name, version, status, startup_time\nFROM   gv$instance\nORDER  BY inst_id;\n\n-- Shell（服务器上执行）：\n-- crsctl check cluster -all\n-- srvctl status database -d <db_name>\n-- srvctl status instance -d <db_name> -i <inst_name>",
+                  "params": [
+                    "<db_name>",
+                    "<inst_name>"
+                  ],
+                  "notes": "gv$instance 需 RAC 环境，单机跑只有一行；crsctl/srvctl 需 grid 用户权限。"
+                },
+                {
+                  "title": "RAC 互联 / 心跳检查",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "oifcfg / 集群日志",
+                  "sql": "SELECT inst_id, name, ip_address, is_public, source\nFROM   gv$cluster_interconnects\nORDER  BY inst_id;\n\n-- Shell（服务器上执行）：\n-- oifcfg getif\n-- crsctl check cssd\n-- crsctl stat res -t",
+                  "params": [],
+                  "notes": "互联（private）丢包会触发节点驱逐；is_public='NO' 的才是互联，勿把公网 IP 当互联。"
+                },
+                {
+                  "title": "服务切换 / 负载均衡检查",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "srvctl config service",
+                  "sql": "SELECT name, network_name, failover_method, failover_type, failover_retries\nFROM   dba_services\nORDER  BY name;\n\n-- Shell（服务器上执行）：\n-- srvctl config service -d <db_name>\n-- srvctl status service -d <db_name>",
+                  "params": [
+                    "<db_name>"
+                  ],
+                  "notes": "dba_services 看的是数据库内服务定义，实际运行状态以 srvctl status 为准；改服务要 srvctl modify，不要直接改表。"
+                }
+              ]
+            },
+            {
+              "name": "DG / OGG",
+              "items": [
+                {
+                  "title": "DG 备库延迟（Apply Lag）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$dataguard_stats",
+                  "sql": "SELECT name, value, time_computed, datum_time\nFROM   v$dataguard_stats;\n\nSELECT database_role, protection_mode, switchover_status, open_mode\nFROM   v$database;",
+                  "params": [],
+                  "notes": "apply lag 和 transport lag 是两个值，v$dataguard_stats 里分开列；备库查要在备库上执行，主库查不到备库延迟。"
+                },
+                {
+                  "title": "DG 切换演练（Switchover）",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "演练前停写确认",
+                  "sql": "-- 第 1 步：先确认可切换（只读，主备都查）：\nSELECT database_role, switchover_status, open_mode\nFROM   v$database;\n\n-- 第 2 步：确认 switchover_status=TO STANDBY / TO PRIMARY 后再执行（DANGER：会切主备角色）：\n-- 主库执行：ALTER DATABASE COMMIT TO SWITCHOVER TO PHYSICAL STANDBY;\n-- 备库执行：ALTER DATABASE COMMIT TO SWITCHOVER TO PRIMARY;\n-- 然后两边分别 SHUTDOWN / STARTUP，按实际演练手册走",
+                  "params": [],
+                  "notes": "DANGER：演练前必须停写确认，switchover_status 不是 TO STANDBY/TO PRIMARY 时不要强行切；RAC 切换步骤与单机不同。"
+                },
+                {
+                  "title": "OGG 抽取 / 投递延迟",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "INFO ALL / lag",
+                  "sql": "-- GGSCI 命令（在 OGG 安装目录执行 ./ggsci，非 SQL）：\n-- INFO ALL\n-- INFO EXTRACT <extract_name>\n-- INFO REPLICAT <replicat_name>\n-- LAG EXTRACT <extract_name>\n-- LAG REPLICAT <replicat_name>\n-- INFO EXTRACT <extract_name>, DETAIL",
+                  "params": [
+                    "<extract_name>",
+                    "<replicat_name>"
+                  ],
+                  "notes": "把握一般：OGG 不是数据库内置功能，命令在 GGSCI 里执行，LAG 数值单位和版本有关；先确认 OGG 版本和进程名再查。"
+                },
+                {
+                  "title": "容灾 RPO=0 演练清单",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "按你的银行案例沉淀",
+                  "sql": "-- 演练前只读检查：\nSELECT database_role, protection_mode, switchover_status FROM v$database;\nSELECT name, value FROM v$dataguard_stats;\n-- LIST BACKUP SUMMARY;  -- RMAN，确认最近全备\n-- 演练清单（只在演练环境执行）：\n-- 1. 确认 DG apply lag = 0、归档无缺口（v$archived_log gap 检查）\n-- 2. 确认 RMAN 最近全备+归档可恢复（VALIDATE DATABASE）\n-- 3. 按演练手册做 Switchover / Failover，记录切换耗时\n-- 4. 切回后确认主备角色、应用连接、数据一致性抽查",
+                  "params": [],
+                  "notes": "把握一般：本条是演练清单，RPO=0 依赖同步模式（MAXIMUM PROTECTION/AVAILABILITY）+网络，清单本身不保证 RPO=0，演练前先核对保护模式。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 权限 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "用户 / 角色 / 权限清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_users / dba_role_privs",
+                  "sql": "SELECT username, account_status, default_tablespace, temporary_tablespace, profile, created\nFROM   dba_users\nORDER  BY username;\n\nSELECT grantee, granted_role, admin_option\nFROM   dba_role_privs\nWHERE  grantee = '<username>'\nORDER  BY granted_role;\n\nSELECT grantee, privilege, admin_option\nFROM   dba_sys_privs\nWHERE  grantee = '<username>'\nORDER  BY privilege;",
+                  "params": [
+                    "<username>"
+                  ],
+                  "notes": "dba_users/dba_role_privs/dba_sys_privs 均需 DBA 权限；查单个用户时把 <username> 换成大写用户名。"
+                },
+                {
+                  "title": "密码过期 / 锁定账号",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_users account_status",
+                  "sql": "SELECT username, account_status, lock_date, expiry_date, profile\nFROM   dba_users\nWHERE  account_status <> 'OPEN'\nORDER  BY username;\n\n-- 即将过期（30 天内）：\nSELECT username, account_status, expiry_date\nFROM   dba_users\nWHERE  expiry_date IS NOT NULL\n  AND  expiry_date < SYSDATE + 30\nORDER  BY expiry_date;",
+                  "params": [],
+                  "notes": "account_status 含 EXPIRED(GRACE) 等多种状态，不等于锁定；解锁用 ALTER USER ... ACCOUNT UNLOCK，属谨慎操作勿批量执行。"
+                },
+                {
+                  "title": "审计开启与审计日志",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "11g审计 / 12c+统一审计",
+                  "sql": "-- 1) 查审计开关（SQL*Plus）：\n-- SHOW PARAMETER audit_trail;\n\n-- 2) 11g 传统审计日志（近 1 天，前 50）：\nSELECT username, action_name, timestamp, obj_name, returncode\nFROM   dba_audit_trail\nWHERE  timestamp >= SYSDATE - 1\n  AND  ROWNUM <= 50\nORDER  BY timestamp DESC;\n\n-- 3) 12c+ 统一审计（仅 12c+，11g 跑会报 ORA-00942）：\n-- SELECT dbusername, action_name, event_timestamp, object_name, return_code\n-- FROM   unified_audit_trail\n-- WHERE  event_timestamp >= SYSDATE - 1\n--   AND  ROWNUM <= 50\n-- ORDER  BY event_timestamp DESC;",
+                  "params": [],
+                  "notes": "11g 用 dba_audit_trail，12c+ 推荐 unified_audit_trail；SHOW PARAMETER 是 SQL*Plus 命令，在 JDBC 里跑不了。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mysql",
+      "name": "MySQL",
+      "versions": "5.7 / 8.0 / 8.4 LTS",
+      "note": "主力，MySQL 8.0 OCP，MGR/MHA/主从",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例与状态",
+              "items": [
+                {
+                  "title": "实例状态 / 版本 / uptime",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW GLOBAL STATUS",
+                  "sql": "SELECT VERSION() AS version;\nSHOW GLOBAL STATUS LIKE 'Uptime';\nSHOW GLOBAL STATUS LIKE 'Threads_connected';",
+                  "params": [],
+                  "notes": "Uptime 单位是秒；先看 VERSION 再对版本，其他条目的版本判断都以它为准。"
+                },
+                {
+                  "title": "连接数 / 最大连接",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "Threads_connected",
+                  "sql": "SHOW GLOBAL STATUS LIKE 'Threads_connected';\nSHOW GLOBAL STATUS LIKE 'Threads_running';\nSHOW VARIABLES LIKE 'max_connections';\nSELECT COUNT(*) AS processlist_count FROM information_schema.PROCESSLIST;",
+                  "params": [],
+                  "notes": "Threads_connected 接近 max_connections 时先查 PROCESSLIST 找长连接，不要直接调大 max_connections。"
+                },
+                {
+                  "title": "慢查询开关与阈值",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "slow_query_log",
+                  "sql": "SHOW VARIABLES LIKE 'slow_query_log';\nSHOW VARIABLES LIKE 'long_query_time';\nSHOW VARIABLES LIKE 'slow_query_log_file';\nSHOW VARIABLES LIKE 'log_queries_not_using_indexes';",
+                  "params": [],
+                  "notes": "只读查看开关；改 long_query_time 建议先在测试库评估，生产改动用 SET GLOBAL 并记录。"
+                },
+                {
+                  "title": "错误日志近24h",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "error log",
+                  "sql": "SHOW VARIABLES LIKE 'log_error';",
+                  "params": [
+                    "<log_error路径>"
+                  ],
+                  "notes": "先用上面 SQL 拿到 log_error 路径，再在 shell 里 grep；SQL 本身不读日志文件。shell: grep -iE 'ERROR|Warning' \"<log_error路径>\" | tail -n 50"
+                },
+                {
+                  "title": "定时任务 / EVENT 状态",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW EVENTS",
+                  "sql": "SHOW VARIABLES LIKE 'event_scheduler';\nSHOW EVENTS;\nSELECT EVENT_SCHEMA, EVENT_NAME, STATUS, LAST_EXECUTED FROM information_schema.EVENTS LIMIT 20;",
+                  "params": [],
+                  "notes": "event_scheduler=OFF 时 EVENT 不执行；STATUS=SLAVESIDE_DISABLED 表示在从库上被禁用，是正常现象。"
+                }
+              ]
+            },
+            {
+              "name": "健康指标",
+              "items": [
+                {
+                  "title": "InnoDB Buffer Pool 命中率",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "Innodb_buffer_pool_read%",
+                  "sql": "SHOW GLOBAL STATUS LIKE 'Innodb_buffer_pool_read%';\nSELECT ROUND(100 * (1 - SUM(CASE WHEN VARIABLE_NAME = 'Innodb_buffer_pool_reads' THEN VARIABLE_VALUE ELSE 0 END) / NULLIF(SUM(CASE WHEN VARIABLE_NAME = 'Innodb_buffer_pool_read_requests' THEN VARIABLE_VALUE ELSE 0 END), 0)), 2) AS buffer_pool_hit_pct FROM performance_schema.global_status WHERE VARIABLE_NAME IN ('Innodb_buffer_pool_reads', 'Innodb_buffer_pool_read_requests');",
+                  "params": [],
+                  "notes": "命中率正常应 >99%；低于 99% 先看 Buffer Pool 是否太小，不要直接归咎于 SQL。"
+                },
+                {
+                  "title": "QPS / TPS 趋势",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "Questions / Com_commit",
+                  "sql": "SHOW GLOBAL STATUS LIKE 'Questions';\nSHOW GLOBAL STATUS LIKE 'Com_commit';\nSHOW GLOBAL STATUS LIKE 'Com_rollback';\nSHOW GLOBAL STATUS LIKE 'Uptime';",
+                  "params": [],
+                  "notes": "QPS=Questions/Uptime、TPS=(Com_commit+Com_rollback)/Uptime；单点值没意义，隔 10 秒取两次再算差值。"
+                },
+                {
+                  "title": "临时表 / 排序溢出",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "Created_tmp_disk_tables",
+                  "sql": "SHOW GLOBAL STATUS LIKE 'Created_tmp%';\nSHOW GLOBAL STATUS LIKE 'Sort_merge_passes';\nSHOW GLOBAL STATUS LIKE 'Sort_scan';\nSHOW GLOBAL STATUS LIKE 'Sort_range';",
+                  "params": [],
+                  "notes": "Created_tmp_disk_tables 持续增长说明内存临时表不够或 SQL 有大排序，先看 SQL 再调 tmp_table_size。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "参数与内存",
+              "items": [
+                {
+                  "title": "关键参数速查（innodb_buffer_pool_size 等）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW VARIABLES",
+                  "sql": "SHOW VARIABLES WHERE Variable_name IN ('innodb_buffer_pool_size', 'innodb_log_file_size', 'innodb_flush_log_at_trx_commit', 'max_connections', 'innodb_buffer_pool_instances', 'tmp_table_size', 'max_heap_table_size', 'sort_buffer_size', 'join_buffer_size', 'innodb_io_capacity', 'innodb_flush_method');",
+                  "params": [],
+                  "notes": "只读速查；8.0 已移除 query_cache 相关变量，不在列表里，查不到是正常的。"
+                },
+                {
+                  "title": "Buffer Pool 建议值",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "按内存 70-80% 估算",
+                  "sql": "SELECT @@innodb_buffer_pool_size / 1024 / 1024 / 1024 AS buffer_pool_gb;\nSHOW VARIABLES LIKE 'innodb_buffer_pool_instances';\nSHOW GLOBAL STATUS LIKE 'Innodb_buffer_pool_pages_total';",
+                  "params": [],
+                  "notes": "专用数据库服务器建议 Buffer Pool 占物理内存 70%-80%；先用 free -g 看整机内存，再算，不要只看当前值。"
+                },
+                {
+                  "title": "统计信息 / 直方图（8.0+）",
+                  "versions": "8.0+",
+                  "risk": "只读",
+                  "desc": "information_schema.COLUMN_STATISTICS",
+                  "sql": "SELECT SCHEMA_NAME, TABLE_NAME, COLUMN_NAME, HISTOGRAM FROM information_schema.COLUMN_STATISTICS LIMIT 50;",
+                  "params": [],
+                  "notes": "仅 8.0+：information_schema.COLUMN_STATISTICS，HISTOGRAM 是 JSON；5.7 没有这张表，查不到不是故障。新增直方图用 ANALYZE TABLE <库>.<表> UPDATE HISTOGRAM ON <列>。"
+                }
+              ]
+            },
+            {
+              "name": "索引",
+              "items": [
+                {
+                  "title": "未使用索引（sys.schema_unused_indexes）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "sys 库",
+                  "sql": "SELECT * FROM sys.schema_unused_indexes LIMIT 50;",
+                  "params": [],
+                  "notes": "sys 库视图，5.7+ 可用；删索引前先确认该表在业务低峰的访问情况，误删恢复要重建。"
+                },
+                {
+                  "title": "冗余 / 重复索引",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "sys.schema_redundant_indexes",
+                  "sql": "SELECT * FROM sys.schema_redundant_indexes LIMIT 50;",
+                  "params": [],
+                  "notes": "sys 库视图；冗余索引会拖慢写入，删之前先用不可见索引（8.0+）灰度验证。"
+                },
+                {
+                  "title": "索引基数与选择性",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW INDEX",
+                  "sql": "SHOW INDEX FROM <db>.<table>;\nSELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, COLUMN_NAME, CARDINALITY FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '<db>' AND TABLE_NAME = '<table>' LIMIT 50;",
+                  "params": [
+                    "<db>",
+                    "<table>"
+                  ],
+                  "notes": "CARDINALITY 越接近表行数选择性越好；刚 ANALYZE 完的基数才准，过期统计会误导。"
+                },
+                {
+                  "title": "不可见索引（8.0+）",
+                  "versions": "8.0+",
+                  "risk": "谨慎",
+                  "desc": "Invisible Index 试索引",
+                  "sql": "SELECT INDEX_NAME, IS_VISIBLE FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '<db>' AND TABLE_NAME = '<table>' LIMIT 50;\n-- 设为不可见（仅 8.0+，灰度验证用）：\n-- ALTER TABLE <db>.<table> ALTER INDEX <index> INVISIBLE;\n-- 恢复可见：ALTER TABLE <db>.<table> ALTER INDEX <index> VISIBLE;",
+                  "params": [
+                    "<db>",
+                    "<table>",
+                    "<index>"
+                  ],
+                  "notes": "仅 8.0+：IS_VISIBLE 列和 ALTER INDEX ... INVISIBLE/VISIBLE 都是 8.0 才有；先 INVISIBLE 观察一周无问题再 DROP。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢查询日志分析（mysqldumpslow / pt-query-digest）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "命令行工具",
+                  "sql": "-- shell: mysqldumpslow -s t -t 20 \"<slow_log路径>\"\n-- shell: pt-query-digest --type slowlog \"<slow_log路径>\" | head -n 100\nSHOW VARIABLES LIKE 'slow_query_log_file';",
+                  "params": [
+                    "<slow_log路径>"
+                  ],
+                  "notes": "先用上面 SQL 拿到慢日志路径再分析；pt-query-digest 需单独安装 percona-toolkit，不在 MySQL 自带。"
+                },
+                {
+                  "title": "performance_schema Top SQL",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "events_statements_summary",
+                  "sql": "-- 需 performance_schema 开启（默认开），否则结果为空。\nSELECT DIGEST_TEXT, COUNT_STAR, ROUND(SUM_TIMER_WAIT / 1000000000000, 2) AS sum_sec, ROUND(AVG_TIMER_WAIT / 1000000000000, 4) AS avg_sec, SUM_ROWS_EXAMINED, SUM_ROWS_SENT FROM performance_schema.events_statements_summary_by_digest ORDER BY SUM_TIMER_WAIT DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "需 performance_schema 开启；SUM_TIMER_WAIT 单位是皮秒，已换算成秒；DIGEST_TEXT 是归一化后的 SQL。"
+                },
+                {
+                  "title": "sys.statements_with_runtimes_in_95th",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "sys 库 95分位",
+                  "sql": "SELECT * FROM sys.statements_with_runtimes_in_95th LIMIT 20;",
+                  "params": [],
+                  "notes": "sys 库视图，5.7+ 可用；看 95 分位耗时而不是平均耗时，平均值会被少数慢查询拉高或拉低。"
+                },
+                {
+                  "title": "全表扫描 SQL",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "No_index_used",
+                  "sql": "SELECT DIGEST_TEXT, COUNT_STAR, SUM_NO_INDEX_USED, SUM_NO_GOOD_INDEX_USED FROM performance_schema.events_statements_summary_by_digest WHERE SUM_NO_INDEX_USED > 0 ORDER BY SUM_NO_INDEX_USED DESC LIMIT 20;\nSELECT * FROM sys.statements_with_full_table_scans LIMIT 20;",
+                  "params": [],
+                  "notes": "需 performance_schema 开启；SUM_NO_INDEX_USED>0 不等于一定是坏 SQL，小表全表扫描可能是合理的。"
+                }
+              ]
+            },
+            {
+              "name": "执行计划",
+              "items": [
+                {
+                  "title": "EXPLAIN / EXPLAIN ANALYZE（8.0.18+）",
+                  "versions": "8.0+",
+                  "risk": "只读",
+                  "desc": "真实执行耗时",
+                  "sql": "-- 8.0.18+ 才有 EXPLAIN ANALYZE；5.7/8.0.17 及以下只能用 EXPLAIN。\n-- EXPLAIN ANALYZE 会真实执行 SQL，只对 SELECT 用，不要对 UPDATE/DELETE 用。\nEXPLAIN <SELECT 语句>;\n-- EXPLAIN ANALYZE <SELECT 语句>;",
+                  "params": [
+                    "<SELECT 语句>"
+                  ],
+                  "notes": "仅 8.0.18+ 才有 EXPLAIN ANALYZE；它会真实执行，只对 SELECT 用，生产上先在从库或测试库跑。"
+                },
+                {
+                  "title": "执行计划走索引 vs 全表",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "type=ALL 警示",
+                  "sql": "EXPLAIN <SELECT 语句>;",
+                  "params": [
+                    "<SELECT 语句>"
+                  ],
+                  "notes": "看 type 列：ALL=全表扫描要警惕，ref/range/const 一般较好；再看 Extra 是否有 Using filesort / Using temporary。"
+                },
+                {
+                  "title": "JOIN 顺序 / 驱动表检查",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "EXPLAIN rows",
+                  "sql": "EXPLAIN <SELECT 语句>;",
+                  "params": [
+                    "<SELECT 语句>"
+                  ],
+                  "notes": "看 id 顺序和 rows：rows 小的表先驱动一般更优；JOIN 字段两边类型不一致会导致索引失效。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "当前锁等待（sys.innodb_lock_waits）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "sys 库",
+                  "sql": "SELECT * FROM sys.innodb_lock_waits LIMIT 20;",
+                  "params": [],
+                  "notes": "sys 库视图，5.7+ 可用；先看 blocking_pid 再决定杀谁，杀等待方通常没用，要杀阻塞方。"
+                },
+                {
+                  "title": "死锁日志（SHOW ENGINE INNODB STATUS）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "LATEST DETECTED DEADLOCK",
+                  "sql": "SHOW ENGINE INNODB STATUS;",
+                  "params": [],
+                  "notes": "输出里找 LATEST DETECTED DEADLOCK 一节；只读查看，死锁本身由 InnoDB 自动回滚其中一个事务。"
+                },
+                {
+                  "title": "杀会话（KILL CONNECTION）",
+                  "versions": "5.7+",
+                  "risk": "危险",
+                  "desc": "先确认",
+                  "sql": "-- 先查，再杀：\nSELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, INFO FROM information_schema.PROCESSLIST WHERE TIME > 300 ORDER BY TIME DESC LIMIT 20;\n-- DANGER: 先确认该连接的业务影响，再执行下面一行，<connection_id> 填上面查到的 ID：\n-- KILL CONNECTION <connection_id>;",
+                  "params": [
+                    "<connection_id>"
+                  ],
+                  "notes": "DANGER：KILL 前先确认 ID 对应的 SQL 和业务影响；KILL CONNECTION 只断连接，KILL QUERY 只停当前查询，默认 KILL 等于 KILL CONNECTION。"
+                },
+                {
+                  "title": "长事务（>30min）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "information_schema.INNODB_TRX",
+                  "sql": "SELECT trx_id, trx_state, trx_started, trx_mysql_thread_id, trx_query FROM information_schema.INNODB_TRX WHERE trx_started < NOW() - INTERVAL 30 MINUTE LIMIT 20;",
+                  "params": [],
+                  "notes": "长事务会拖住 undo 和锁；先看 trx_query 再决定是等它提交还是联系业务方，不要直接 KILL。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间 / 存储",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "库 / 表大小 Top 20",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "information_schema.TABLES",
+                  "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, ROUND(SUM(DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb, ROUND(SUM(DATA_LENGTH) / 1024 / 1024, 2) AS data_mb, ROUND(SUM(INDEX_LENGTH) / 1024 / 1024, 2) AS index_mb, SUM(TABLE_ROWS) AS rows_est FROM information_schema.TABLES GROUP BY TABLE_SCHEMA, TABLE_NAME ORDER BY size_mb DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "TABLE_ROWS 是估算值（InnoDB），不要当精确行数；大小按 DATA_LENGTH+INDEX_LENGTH 算。"
+                },
+                {
+                  "title": "碎片率与 OPTIMIZE 评估",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "OPTIMIZE 会锁表（8.0 在线部分）",
+                  "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, ROUND(DATA_FREE / 1024 / 1024, 2) AS data_free_mb, ROUND(DATA_FREE / NULLIF(DATA_LENGTH + INDEX_LENGTH, 0) * 100, 2) AS free_pct FROM information_schema.TABLES WHERE DATA_FREE > 0 ORDER BY DATA_FREE DESC LIMIT 20;\n-- 评估后、非高峰再执行：OPTIMIZE TABLE <db>.<table>;",
+                  "params": [
+                    "<db>",
+                    "<table>"
+                  ],
+                  "notes": "谨慎：OPTIMIZE TABLE 会重建表，8.0 InnoDB 虽然在线但仍占 IO 和磁盘空间，先确认剩余磁盘大于表大小。"
+                },
+                {
+                  "title": "ibdata / undo / redo 大小",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW VARIABLES",
+                  "sql": "SHOW VARIABLES LIKE 'innodb_data_file_path';\nSHOW VARIABLES LIKE 'innodb_data_home_dir';\nSHOW VARIABLES LIKE 'innodb_undo_directory';\nSHOW VARIABLES LIKE 'innodb_log_file_size';\nSHOW VARIABLES LIKE 'innodb_log_files_in_group';\nSHOW VARIABLES LIKE 'innodb_log_group_home_dir';",
+                  "params": [],
+                  "notes": "只读查看路径和大小；ibdata1 只增不减是正常现象，不要直接删文件，删了实例起不来。"
+                },
+                {
+                  "title": "磁盘使用率预警",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "df + 表大小",
+                  "sql": "SELECT TABLE_SCHEMA, ROUND(SUM(DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024 / 1024, 2) AS total_gb FROM information_schema.TABLES GROUP BY TABLE_SCHEMA ORDER BY total_gb DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "SQL 只算库大小，磁盘余量要另看 shell：df -h <datadir>；datadir 路径用 SHOW VARIABLES LIKE 'datadir' 查。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "逻辑备份",
+              "items": [
+                {
+                  "title": "mysqldump 全备 / 单库 / 单表",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "--single-transaction",
+                  "sql": "-- shell: 全库备份\n-- mysqldump --single-transaction --quick --master-data=2 --routines --events --triggers -u <user> -p <db> > \"<backup_dir>/<db>_$(date +%F).sql\"\n-- shell: 单表备份\n-- mysqldump --single-transaction --quick -u <user> -p <db> <table> > \"<backup_dir>/<db>_<table>.sql\"\n-- 备份前先确认 binlog 位置：\nSHOW BINARY LOGS;",
+                  "params": [
+                    "<user>",
+                    "<db>",
+                    "<table>",
+                    "<backup_dir>"
+                  ],
+                  "notes": "谨慎：--single-transaction 只对 InnoDB 一致；MyISAM 表不在此保证内；8.4 里 --master-data 已改名 --source-data=2，8.0 及以下用 --master-data=2；-p 后不要在命令行写明文密码，会进 shell 历史。"
+                },
+                {
+                  "title": "mydumper 并行备份",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "大库首选",
+                  "sql": "-- shell: mydumper -u <user> -B <db> -o \"<backup_dir>\" -t 4 --routines --events --triggers --compress\n-- shell: 恢复用 myloader -u <user> -d \"<backup_dir>\" -t 4\n-- 备份前先确认：\nSHOW BINARY LOGS;",
+                  "params": [
+                    "<user>",
+                    "<db>",
+                    "<backup_dir>"
+                  ],
+                  "notes": "谨慎：mydumper 需单独安装，不在 MySQL 自带；大库首选并行备份，恢复前先在测试库演练一遍。"
+                },
+                {
+                  "title": "binlog PITR 恢复",
+                  "versions": "5.7+",
+                  "risk": "危险",
+                  "desc": "mysqlbinlog + STOPAT",
+                  "sql": "-- DANGER: 时间点恢复会回放 binlog，先在测试库演练，确认起止时间后再在目标库执行。\n-- shell: mysqlbinlog --start-datetime=\"2026-11-24 10:00:00\" --stop-datetime=\"2026-11-24 11:00:00\" \"<binlog文件>\" | mysql -u <user> -p\n-- 先确认 binlog 列表：\nSHOW BINARY LOGS;",
+                  "params": [
+                    "<binlog文件>",
+                    "<user>"
+                  ],
+                  "notes": "DANGER：PITR 是回放写操作，起止时间错了会多回放或少回放；先 SHOW BINARY LOGS 确认文件名，再在测试库跑一遍。"
+                }
+              ]
+            },
+            {
+              "name": "物理备份",
+              "items": [
+                {
+                  "title": "XtraBackup 全备 / 增量",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "xtrabackup --backup",
+                  "sql": "-- shell: 全备\n-- xtrabackup --backup --target-dir=\"<base_dir>\" -u <user> -p\n-- shell: 增量（基于全备目录）\n-- xtrabackup --backup --target-dir=\"<inc_dir>\" --incremental-basedir=\"<base_dir>\" -u <user> -p\n-- 备份后检查：\nSHOW BINARY LOGS;",
+                  "params": [
+                    "<user>",
+                    "<base_dir>",
+                    "<inc_dir>"
+                  ],
+                  "notes": "谨慎：XtraBackup 需单独安装，版本要和 MySQL 大版本对应；增量备份依赖全备目录，不要删全备。"
+                },
+                {
+                  "title": "XtraBackup 恢复演练",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "--prepare + --copy-back",
+                  "sql": "-- DANGER: 恢复演练只在测试库做，--copy-back 会覆盖 datadir，执行前必须先停 MySQL。\n-- shell: xtrabackup --prepare --apply-log-only --target-dir=\"<base_dir>\"\n-- shell: xtrabackup --prepare --target-dir=\"<base_dir>\"\n-- shell: xtrabackup --copy-back --target-dir=\"<base_dir>\" --datadir=\"<datadir>\"",
+                  "params": [
+                    "<base_dir>",
+                    "<datadir>"
+                  ],
+                  "notes": "DANGER：只在测试库演练；--copy-back 前必须停库并确认 datadir 为空或已备份，生产库不要直接跑。"
+                },
+                {
+                  "title": "闪回（binlog2sql）",
+                  "versions": "5.7+",
+                  "risk": "危险",
+                  "desc": "DELETE/UPDATE 闪回",
+                  "sql": "-- shell: python binlog2sql.py -h<host> -u<user> -d<db> -t<table> --start-file=\"<binlog文件>\" --start-datetime=\"2026-11-24 10:00:00\" --stop-datetime=\"2026-11-24 11:00:00\" -B\n-- 闪回只对 DML 有效，先确认：\nSHOW VARIABLES LIKE 'binlog_format';",
+                  "params": [
+                    "<host>",
+                    "<user>",
+                    "<db>",
+                    "<table>",
+                    "<binlog文件>"
+                  ],
+                  "notes": "DANGER：binlog2sql 需单独安装，只支持 ROW 格式 binlog 的 DML 闪回；生成的反向 SQL 先人工检查再执行，不要直接管道进 mysql。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用 / 复制",
+          "subcategories": [
+            {
+              "name": "主从",
+              "items": [
+                {
+                  "title": "主从延迟（Seconds_Behind_Master）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW SLAVE STATUS",
+                  "sql": "-- 5.7: SHOW SLAVE STATUS\n-- 8.0+: SHOW REPLICA STATUS（5.7 的 SHOW SLAVE STATUS 在 8.0 仍可用，8.4 已移除）\nSHOW SLAVE STATUS;",
+                  "params": [],
+                  "notes": "看 Seconds_Behind_Master（8.0 从库状态里叫 Seconds_Behind_Source）；延迟先看 SQL 线程是否在跑，再看大事务。"
+                },
+                {
+                  "title": "复制错误定位（Last_Error）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "IO/SQL线程",
+                  "sql": "SHOW SLAVE STATUS;\nSELECT SERVICE_STATE, LAST_ERROR_NUMBER, LAST_ERROR_MESSAGE FROM performance_schema.replication_applier_status LIMIT 20;",
+                  "params": [],
+                  "notes": "先看 SHOW 里的 Last_IO_Error / Last_SQL_Error，再看 performance_schema 的 applier 状态；不要直接跳过错误（sql_slave_skip_counter）。"
+                },
+                {
+                  "title": "GTID 一致性检查",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "gtid_executed",
+                  "sql": "SHOW VARIABLES LIKE 'gtid_mode';\nSHOW VARIABLES LIKE 'enforce_gtid_consistency';\nSELECT @@GLOBAL.gtid_executed AS gtid_executed;\nSELECT @@GLOBAL.gtid_purged AS gtid_purged;",
+                  "params": [],
+                  "notes": "主从的 Retrieved_Gtid_Set 和 Executed_Gtid_Set 对不上先别切主，先查哪段 GTID 缺了；gtid_purged 被清掉的 GTID 找不回来。"
+                }
+              ]
+            },
+            {
+              "name": "MGR / MHA",
+              "items": [
+                {
+                  "title": "MGR 成员状态",
+                  "versions": "8.0+",
+                  "risk": "只读",
+                  "desc": "performance_schema.replication_group_members",
+                  "sql": "SELECT MEMBER_ID, MEMBER_HOST, MEMBER_PORT, MEMBER_STATE, MEMBER_ROLE FROM performance_schema.replication_group_members;",
+                  "params": [],
+                  "notes": "仅 8.0+：replication_group_members 是 MGR 的表，5.7 没有；MEMBER_STATE=ONLINE 且只有一个 PRIMARY 才是正常。"
+                },
+                {
+                  "title": "MGR 主节点切换",
+                  "versions": "8.0+",
+                  "risk": "危险",
+                  "desc": "group_replication_set_as_primary",
+                  "sql": "-- 先查当前主节点 UUID：\nSELECT MEMBER_ID, MEMBER_HOST, MEMBER_ROLE FROM performance_schema.replication_group_members;\n-- DANGER: 切换主节点，先确认业务影响和新主已同步：\n-- SELECT group_replication_set_as_primary('<primary_uuid>');",
+                  "params": [
+                    "<primary_uuid>"
+                  ],
+                  "notes": "DANGER：仅 8.0+；group_replication_set_as_primary 是函数调用形式（SELECT ...），切换前确认新主已追上，否则会丢数据。"
+                },
+                {
+                  "title": "MHA 切换演练清单",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "masterha_check_status",
+                  "sql": "-- shell: 检查 SSH 和复制\n-- masterha_check_ssh --conf=\"<mha_conf>\"\n-- masterha_check_repl --conf=\"<mha_conf>\"\n-- shell: 演练切换（只在演练环境，interactive=0 表示不交互确认，务必先确认）\n-- masterha_master_switch --conf=\"<mha_conf>\" --master_state=alive --new_master_host=\"<new_master_host>\" --orig_master_is_new_slave --running_updates_limit=100 --interactive=0\n-- 切换前先确认主从：\nSHOW SLAVE STATUS;",
+                  "params": [
+                    "<mha_conf>",
+                    "<new_master_host>"
+                  ],
+                  "notes": "谨慎：MHA 需单独安装；masterha_master_switch 是真实切换，只在演练环境跑，生产切换要走审批和停写窗口。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "用户 / 权限清单",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "mysql.user",
+                  "sql": "SELECT User, Host FROM mysql.user LIMIT 50;\n-- 查某账号权限：SHOW GRANTS FOR '<user>'@'<host>';",
+                  "params": [
+                    "<user>",
+                    "<host>"
+                  ],
+                  "notes": "先看 mysql.user 全量账号，再对单个账号 SHOW GRANTS；不要直接 SELECT * FROM mysql.user，含敏感列。"
+                },
+                {
+                  "title": "弱密码 / 无密码账号",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "authentication_string 为空",
+                  "sql": "SELECT User, Host, plugin FROM mysql.user WHERE authentication_string = '' OR authentication_string IS NULL LIMIT 50;",
+                  "params": [],
+                  "notes": "authentication_string 为空的账号可能是无密码或用 socket 认证；plugin=auth_socket 的本地账号是正常情况，不要误杀。"
+                },
+                {
+                  "title": "审计（8.0 audit log / 5.7 插件）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "按版本区分",
+                  "sql": "SHOW VARIABLES LIKE 'audit_log%';\nSELECT PLUGIN_NAME, PLUGIN_STATUS FROM information_schema.PLUGINS WHERE PLUGIN_NAME = 'audit_log';",
+                  "params": [],
+                  "notes": "5.7 需 INSTALL PLUGIN audit_log SONAME 'audit_log.so'，8.0 用 audit_log_filter；两个版本的审计配置不同，先按版本确认再开。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "versions": "12 / 13 / 14 / 15 / 16 / 17",
+      "note": "PCA 考证中，主力扩展方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "版本 / uptime / 连接数",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_activity",
+                  "sql": "SELECT version() AS pg_version;\nSELECT pg_postmaster_start_time() AS start_time,\n       now() - pg_postmaster_start_time() AS uptime;\nSELECT count(*) AS total_connections,\n       count(*) FILTER (WHERE state = 'active') AS active_connections\nFROM pg_stat_activity;",
+                  "params": [],
+                  "notes": "version() 和 pg_postmaster_start_time() 在所有 12+ 版本都有，连接数含后台进程。"
+                },
+                {
+                  "title": "WAL 生成量",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_wal",
+                  "sql": "-- PG 14+ 首选 pg_stat_wal；12/13 没有该视图，用下面两条代替\nSELECT * FROM pg_stat_archiver;\nSELECT pg_current_wal_lsn() AS current_wal_lsn,\n       pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0') AS wal_bytes_since_start;\n-- PG 14+ 可另跑：SELECT wal_records, wal_bytes, wal_write_time FROM pg_stat_wal;",
+                  "params": [],
+                  "notes": "pg_stat_wal 仅 14+ 有，12/13 查 pg_stat_archiver + pg_current_wal_lsn()。"
+                },
+                {
+                  "title": "后台进程状态",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_activity backend_type",
+                  "sql": "SELECT backend_type, state, count(*) AS cnt\nFROM pg_stat_activity\nGROUP BY backend_type, state\nORDER BY cnt DESC\nLIMIT 20;\nSELECT pid, backend_type, state, now() - query_start AS duration, left(query, 200) AS query\nFROM pg_stat_activity\nWHERE state = 'active'\nORDER BY query_start\nLIMIT 20;",
+                  "params": [],
+                  "notes": "backend_type 区分 autovacuum / walsender / checkpointer 等后台进程。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "参数与缓存",
+              "items": [
+                {
+                  "title": "shared_buffers / work_mem 建议",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "SHOW",
+                  "sql": "SELECT name, setting, unit, context, short_desc\nFROM pg_settings\nWHERE name IN ('shared_buffers','work_mem','maintenance_work_mem',\n               'effective_cache_size','max_connections')\nORDER BY name;\nSHOW shared_buffers;\nSHOW work_mem;",
+                  "params": [],
+                  "notes": "只读查询参数，不改配置；调参要结合内存总量和连接数，改完需 reload/重启看 context。"
+                },
+                {
+                  "title": "缓存命中率（heap / index）",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_statio_user_tables",
+                  "sql": "SELECT schemaname, relname,\n       heap_blks_read, heap_blks_hit,\n       round(100.0 * heap_blks_hit / NULLIF(heap_blks_hit + heap_blks_read, 0), 2) AS heap_hit_pct,\n       idx_blks_read, idx_blks_hit,\n       round(100.0 * idx_blks_hit / NULLIF(idx_blks_hit + idx_blks_read, 0), 2) AS idx_hit_pct\nFROM pg_statio_user_tables\nORDER BY heap_blks_read DESC\nLIMIT 20;",
+                  "params": [],
+                  "notes": "heap 命中率低于 99% 且读盘大时先看 shared_buffers 和热点表。"
+                },
+                {
+                  "title": "统计信息 / ANALYZE 状态",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_user_tables",
+                  "sql": "SELECT schemaname, relname, n_live_tup, n_mod_since_analyze,\n       last_analyze, last_autoanalyze\nFROM pg_stat_user_tables\nORDER BY n_mod_since_analyze DESC NULLS LAST\nLIMIT 20;",
+                  "params": [],
+                  "notes": "n_mod_since_analyze 大且 last_analyze 很旧，说明统计信息过期。"
+                },
+                {
+                  "title": "自动 VACUUM 状态",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "autovacuum",
+                  "sql": "SELECT name, setting, unit\nFROM pg_settings\nWHERE name LIKE 'autovacuum%'\nORDER BY name;\nSELECT schemaname, relname, last_autovacuum, last_autoanalyze,\n       autovacuum_count, autoanalyze_count\nFROM pg_stat_user_tables\nORDER BY last_autovacuum NULLS FIRST\nLIMIT 20;",
+                  "params": [],
+                  "notes": "autovacuum 关了或 long-running 事务堵住时，死元组会一直涨。"
+                }
+              ]
+            },
+            {
+              "name": "索引",
+              "items": [
+                {
+                  "title": "未使用索引",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_user_indexes idx_scan=0",
+                  "sql": "SELECT schemaname, relname AS table_name, indexrelname AS index_name,\n       idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) AS index_size\nFROM pg_stat_user_indexes\nWHERE idx_scan = 0\n  AND indexrelname NOT LIKE 'pg_%'\nORDER BY pg_relation_size(indexrelid) DESC\nLIMIT 20;",
+                  "params": [],
+                  "notes": "idx_scan=0 只说明统计周期内没用过，删前确认统计周期够长且不是唯一约束索引。"
+                },
+                {
+                  "title": "缺失索引（hypopg 评估）",
+                  "versions": "12+",
+                  "risk": "谨慎",
+                  "desc": "hypopg 扩展",
+                  "sql": "-- 先确认扩展：hypopg 不在 PG 核心里，需先安装\nSELECT * FROM pg_extension WHERE extname = 'hypopg';\n-- 模板：用参数替换表名和列名，只做假设评估，不会真建索引\n-- SELECT * FROM hypopg_create_index('CREATE INDEX ON <table_name> (<column_list>)');\n-- SELECT * FROM hypopg_list_indexes();\n-- 评估完清理：SELECT * FROM hypopg_drop_index(<hypopg_index_oid>);\n-- 再用 EXPLAIN 对比加假设索引前后的计划",
+                  "params": [
+                    "table_name",
+                    "column_list"
+                  ],
+                  "notes": "hypopg 是第三方扩展，需先 CREATE EXTENSION hypopg；它只做假设，不建真实索引。"
+                },
+                {
+                  "title": "膨胀索引 / bloat 评估",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pgstattuple",
+                  "sql": "-- 先确认扩展：pgstattuple 不在 PG 核心里\nSELECT * FROM pg_extension WHERE extname = 'pgstattuple';\n-- 单个索引评估（替换参数为索引名）：\n-- SELECT * FROM pgstatindex('<index_name>');\n-- 无扩展时的替代：只看索引大小排序，再结合表膨胀判断\nSELECT schemaname, relname AS table_name, indexrelname AS index_name,\n       pg_size_pretty(pg_relation_size(indexrelid)) AS index_size\nFROM pg_stat_user_indexes\nORDER BY pg_relation_size(indexrelid) DESC\nLIMIT 20;",
+                  "params": [
+                    "index_name"
+                  ],
+                  "notes": "pgstatindex 一次只能查一个索引，全库 bloat 需循环或用 pgstattuple 的近似估算查询。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "pg_stat_statements Top SQL",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "需开启扩展",
+                  "sql": "-- 前置（一次）：CREATE EXTENSION pg_stat_statements;\n-- PG 13+ 用 total_exec_time / mean_exec_time；PG 12 用 total_time / mean_time\nSELECT query, calls,\n       round(total_exec_time::numeric, 2) AS total_exec_time_ms,\n       round(mean_exec_time::numeric, 2) AS mean_exec_time_ms,\n       rows\nFROM pg_stat_statements\nORDER BY total_exec_time DESC\nLIMIT 20;",
+                  "params": [],
+                  "notes": "需先 CREATE EXTENSION pg_stat_statements 并在 shared_preload_libraries 里加载，PG 12 列名是 total_time/mean_time。"
+                },
+                {
+                  "title": "慢查询日志（log_min_duration）",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "postgresql.conf",
+                  "sql": "SELECT name, setting, unit, context\nFROM pg_settings\nWHERE name IN ('log_min_duration_statement','log_statement',\n               'log_directory','logging_collector','log_filename')\nORDER BY name;\n-- 改阈值模板（改完 pg_reload_conf() 即可，不用重启）：\n-- ALTER SYSTEM SET log_min_duration_statement = '1000';\n-- SELECT pg_reload_conf();",
+                  "params": [],
+                  "notes": "log_min_duration_statement 单位是毫秒，设 1000 即只记 >1s 的；改配置用 ALTER SYSTEM + reload。"
+                },
+                {
+                  "title": "EXPLAIN ANALYZE",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "真实耗时+Buffers",
+                  "sql": "-- 把 <query_text> 换成要分析的 SQL；真实执行，会跑完查询\nEXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) <query_text>;",
+                  "params": [
+                    "query_text"
+                  ],
+                  "notes": "EXPLAIN ANALYZE 会真实执行，大查询/写操作先在测试库跑，别在生产直接跑。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁链（pg_blocking_pids）",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_activity",
+                  "sql": "SELECT blocked.pid AS blocked_pid, blocked.usename AS blocked_user,\n       blocked.application_name, blocked.state,\n       now() - blocked.query_start AS blocked_duration,\n       blocking.pid AS blocking_pid, blocking.usename AS blocking_user,\n       left(blocked.query, 200) AS blocked_query\nFROM pg_stat_activity blocked\nJOIN pg_stat_activity blocking\n  ON blocking.pid = ANY (pg_blocking_pids(blocked.pid))\nWHERE cardinality(pg_blocking_pids(blocked.pid)) > 0\nORDER BY blocked_duration DESC\nLIMIT 20;",
+                  "params": [],
+                  "notes": "pg_blocking_pids() 返回阻塞该会话的 pid 数组，根因一般是排头的 blocking_pid。"
+                },
+                {
+                  "title": "死锁统计",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_database deadlocks",
+                  "sql": "SELECT datname, deadlocks, stats_reset\nFROM pg_stat_database\nORDER BY deadlocks DESC\nLIMIT 20;",
+                  "params": [],
+                  "notes": "pg_stat_database 只有死锁次数，没有死锁明细，明细要去日志里找 deadlock detected。"
+                },
+                {
+                  "title": "终止会话（pg_terminate_backend）",
+                  "versions": "12+",
+                  "risk": "危险",
+                  "desc": "先确认",
+                  "sql": "-- 第 1 步：先确认要杀的会话（长运行活跃会话）\nSELECT pid, usename, application_name, client_addr, state,\n       now() - query_start AS duration, left(query, 200) AS query\nFROM pg_stat_activity\nWHERE state = 'active'\n  AND now() - query_start > interval '5 minutes'\nORDER BY duration DESC\nLIMIT 20;\n-- DANGER：确认 pid 无误后再取消注释执行，杀错会话会中断业务\n-- SELECT pg_terminate_backend(<pid>);",
+                  "params": [
+                    "pid"
+                  ],
+                  "notes": "先查清 pid、用户和 SQL 再杀；pg_terminate_backend 会直接断开该连接。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "库 / 表大小 Top",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_database_size",
+                  "sql": "SELECT datname, pg_size_pretty(pg_database_size(datname)) AS db_size\nFROM pg_database\nORDER BY pg_database_size(datname) DESC\nLIMIT 20;\nSELECT schemaname, relname,\n       pg_size_pretty(pg_total_relation_size(relid)) AS total_size,\n       pg_size_pretty(pg_relation_size(relid)) AS table_size,\n       pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) AS index_size\nFROM pg_stat_user_tables\nORDER BY pg_total_relation_size(relid) DESC\nLIMIT 20;",
+                  "params": [],
+                  "notes": "pg_total_relation_size 含表+索引+TOAST，单看表大小用 pg_relation_size。"
+                },
+                {
+                  "title": "表膨胀 / VACUUM 建议",
+                  "versions": "12+",
+                  "risk": "谨慎",
+                  "desc": "VACUUM / VACUUM FULL 区分",
+                  "sql": "-- 第 1 步：先看死元组和上次 VACUUM\nSELECT schemaname, relname, n_live_tup, n_dead_tup,\n       last_vacuum, last_autovacuum\nFROM pg_stat_user_tables\nORDER BY n_dead_tup DESC\nLIMIT 20;\n-- 普通 VACUUM 不锁表，可在线跑（替换表名）：\n-- VACUUM (VERBOSE, ANALYZE) <schema_name>.<table_name>;\n-- DANGER：VACUUM FULL 会重写整张表、独占锁、需额外磁盘空间，非高峰+确认后再跑\n-- VACUUM FULL <schema_name>.<table_name>;",
+                  "params": [
+                    "schema_name",
+                    "table_name"
+                  ],
+                  "notes": "VACUUM 不锁表，VACUUM FULL 会独占锁并重写表，两者不要混用。"
+                },
+                {
+                  "title": "死元组比例",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "n_dead_tup",
+                  "sql": "SELECT schemaname, relname, n_live_tup, n_dead_tup,\n       round(100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct,\n       last_autovacuum\nFROM pg_stat_user_tables\nORDER BY n_dead_tup DESC\nLIMIT 20;",
+                  "params": [],
+                  "notes": "死元组占比高且 autovacuum 没跟上时，先查长事务是否堵住了 VACUUM。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "pg_dump / pg_dumpall",
+                  "versions": "12+",
+                  "risk": "谨慎",
+                  "desc": "逻辑备份",
+                  "sql": "-- shell: pg_dump -h <host> -U <user> -d <db_name> -F c -f <backup_path>.dump\n-- shell: pg_dump -h <host> -U <user> -d <db_name> -F p -f <backup_path>.sql\n-- shell: pg_dumpall -h <host> -U <user> -f <backup_path>-globals.sql\n-- shell: pg_dump --version",
+                  "params": [
+                    "host",
+                    "user",
+                    "db_name",
+                    "backup_path"
+                  ],
+                  "notes": "pg_dump 是逻辑备份，大库慢；-F c 是自定义格式，恢复用 pg_restore。"
+                },
+                {
+                  "title": "pg_basebackup 物理备份",
+                  "versions": "12+",
+                  "risk": "谨慎",
+                  "desc": "流复制备份",
+                  "sql": "-- shell: pg_basebackup -h <host> -U <replicator_user> -D <backup_dir> -Ft -z -P -v -X stream\n-- shell: pg_basebackup -h <host> -U <replicator_user> -D <backup_dir> -Fp -P -v -X stream",
+                  "params": [
+                    "host",
+                    "replicator_user",
+                    "backup_dir"
+                  ],
+                  "notes": "pg_basebackup 需复制账号有 REPLICATION 权限，-X stream 才会把 WAL 一起备走。"
+                },
+                {
+                  "title": "PITR（WAL + recovery_target_time）",
+                  "versions": "12+",
+                  "risk": "危险",
+                  "desc": "需连续WAL",
+                  "sql": "-- 第 1 步：先确认归档和 WAL 连续\nSELECT * FROM pg_stat_archiver;\nSHOW archive_mode;\nSHOW archive_command;\nSELECT pg_current_wal_lsn() AS current_wal_lsn;\n-- DANGER：PITR 要在新目录恢复，不是在原库直接跑；先停写、备好全备+连续 WAL\n-- postgresql.conf: restore_command = 'cp /path/to/archive/%f %p'\n-- postgresql.conf: recovery_target_time = '<target_time>'\n-- 12+ 不再用 recovery.conf，改用 postgresql.conf + 空文件 recovery.signal",
+                  "params": [
+                    "target_time"
+                  ],
+                  "notes": "PITR 要求归档连续、WAL 不缺；12+ 用 recovery.signal，不再用 recovery.conf。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "流复制",
+              "items": [
+                {
+                  "title": "主从延迟（pg_stat_replication）",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "replay_lag",
+                  "sql": "SELECT application_name, client_addr, state, sync_state,\n       pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn) AS replay_lag_bytes,\n       replay_lag, write_lag, flush_lag\nFROM pg_stat_replication\nORDER BY replay_lag DESC\nLIMIT 20;",
+                  "params": [],
+                  "notes": "replay_lag 是备库回放延迟，write/flush 延迟大而 replay 小时说明回放跟不上。"
+                },
+                {
+                  "title": "同步 / 异步模式检查",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "synchronous_standby_names",
+                  "sql": "SHOW synchronous_standby_names;\nSHOW synchronous_commit;\nSELECT application_name, sync_state, state\nFROM pg_stat_replication\nORDER BY application_name\nLIMIT 20;",
+                  "params": [],
+                  "notes": "synchronous_standby_names 为空即异步；同步模式下主库提交要等备库确认。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "角色 / 权限清单",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_roles",
+                  "sql": "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolcanlogin,\n       rolconnlimit, rolvaliduntil\nFROM pg_roles\nORDER BY rolname\nLIMIT 20;\nSELECT grantee, table_schema, table_name, privilege_type\nFROM information_schema.role_table_grants\nORDER BY grantee, table_schema, table_name\nLIMIT 20;",
+                  "params": [],
+                  "notes": "pg_roles 看角色属性，表级授权看 role_table_grants，两者要分开查。"
+                },
+                {
+                  "title": "行级安全（RLS）检查",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_policies",
+                  "sql": "SELECT schemaname, tablename, rowsecurity AS rls_enabled, relforcerowsecurity\nFROM pg_tables\nWHERE rowsecurity\nORDER BY schemaname, tablename\nLIMIT 20;\nSELECT schemaname, tablename, policyname, permissive, roles, cmd\nFROM pg_policies\nORDER BY schemaname, tablename, policyname\nLIMIT 20;",
+                  "params": [],
+                  "notes": "RLS 只对表所有者之外的用户生效，超级用户和表所有者默认绕过。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sqlserver",
+      "name": "SQL Server",
+      "versions": "2016 / 2019 / 2022",
+      "note": "AlwaysOn 方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "版本 / 实例状态",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "@@VERSION / sys.dm_os_sys_info",
+                  "sql": "SELECT @@VERSION AS version;\nSELECT SERVERPROPERTY('Edition') AS edition,\n       SERVERPROPERTY('ProductVersion') AS product_version,\n       SERVERPROPERTY('ProductLevel') AS product_level;\nSELECT cpu_count, physical_memory_kb / 1024 / 1024 AS physical_memory_gb,\n       sqlserver_start_time, virtual_machine_type_desc\nFROM sys.dm_os_sys_info;",
+                  "params": [],
+                  "notes": "@@VERSION 看版本，sys.dm_os_sys_info 看 CPU/内存和启动时间。"
+                },
+                {
+                  "title": "连接 / 作业（Agent Job）状态",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "msdb.dbo.sysjobs",
+                  "sql": "SELECT login_name, host_name, program_name, count(*) AS session_count\nFROM sys.dm_exec_sessions\nWHERE is_user_process = 1\nGROUP BY login_name, host_name, program_name\nORDER BY session_count DESC;\nSELECT TOP 20 j.name AS job_name, j.enabled,\n       ja.run_requested_date, ja.stop_execution_date\nFROM msdb.dbo.sysjobs AS j\nLEFT JOIN msdb.dbo.sysjobactivity AS ja\n  ON ja.job_id = j.job_id\nORDER BY j.name;",
+                  "params": [],
+                  "notes": "sys.dm_exec_sessions 只看用户会话，作业状态在 msdb 的 sysjobs/sysjobactivity。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "DMV",
+              "items": [
+                {
+                  "title": "缓存命中率 / 内存使用",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.dm_os_performance_counters",
+                  "sql": "SELECT object_name, counter_name, cntr_value\nFROM sys.dm_os_performance_counters\nWHERE counter_name IN ('Buffer cache hit ratio',\n                       'Buffer cache hit ratio base',\n                       'Page life expectancy',\n                       'Total Server Memory (KB)',\n                       'Target Server Memory (KB)')\nORDER BY object_name, counter_name;\nSELECT physical_memory_kb / 1024 AS physical_memory_mb,\n       virtual_memory_kb / 1024 AS virtual_memory_mb\nFROM sys.dm_os_sys_info;",
+                  "params": [],
+                  "notes": "Buffer cache hit ratio 要除以同名的 base 计数器再乘 100，单看 cntr_value 不准。"
+                },
+                {
+                  "title": "缺失索引 DMV",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.dm_db_missing_index_details",
+                  "sql": "SELECT TOP 20\n       migs.avg_total_user_cost * migs.avg_user_impact\n         * (migs.user_seeks + migs.user_scans) AS improvement_measure,\n       mid.statement AS table_name,\n       mid.equality_columns, mid.inequality_columns, mid.included_columns\nFROM sys.dm_db_missing_index_groups AS mig\nINNER JOIN sys.dm_db_missing_index_group_stats AS migs\n  ON migs.group_handle = mig.index_group_handle\nINNER JOIN sys.dm_db_missing_index_details AS mid\n  ON mig.index_handle = mid.index_handle\nORDER BY improvement_measure DESC;",
+                  "params": [],
+                  "notes": "DMV 只给建议，建索引前要核对表大小、写比例和已有索引，避免重复建。"
+                },
+                {
+                  "title": "统计信息过期",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.stats",
+                  "sql": "SELECT TOP 20\n       OBJECT_NAME(s.object_id) AS table_name,\n       s.name AS stats_name, s.auto_created, s.user_created,\n       STATS_DATE(s.object_id, s.stats_id) AS last_updated,\n       p.modification_counter, p.rows, p.rows_sampled\nFROM sys.stats AS s\nCROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) AS p\nORDER BY last_updated ASC;",
+                  "params": [],
+                  "notes": "modification_counter 大且 last_updated 很旧，说明统计信息过期，UPDATE STATISTICS 前先评估。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "Query Store Top SQL（2016+）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.query_store_runtime_stats",
+                  "sql": "-- 前置：Query Store 需开启，查 sys.database_query_store_options 确认\nSELECT state_desc FROM sys.database_query_store_options;\nSELECT TOP 20\n       q.query_id,\n       LEFT(qt.query_sql_text, 200) AS query_text,\n       rs.avg_duration AS avg_duration_us,\n       rs.count_executions,\n       rs.avg_cpu_time, rs.avg_logical_io_reads\nFROM sys.query_store_query AS q\nJOIN sys.query_store_query_text AS qt\n  ON qt.query_text_id = q.query_text_id\nJOIN sys.query_store_plan AS p\n  ON p.query_id = q.query_id\nJOIN sys.query_store_runtime_stats AS rs\n  ON rs.plan_id = p.plan_id\nORDER BY rs.avg_duration DESC;",
+                  "params": [],
+                  "notes": "Query Store 需先开启（ALTER DATABASE SET QUERY_STORE = ON），没开时这些视图是空的。"
+                },
+                {
+                  "title": "最耗 CPU / IO 的查询",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.dm_exec_query_stats",
+                  "sql": "SELECT TOP 20\n       qs.total_worker_time / 1000 AS total_cpu_ms,\n       qs.total_logical_reads, qs.total_logical_writes,\n       qs.execution_count,\n       SUBSTRING(st.text, (qs.statement_start_offset / 2) + 1,\n         ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\n           ELSE qs.statement_end_offset END - qs.statement_start_offset) / 2) + 1) AS query_text\nFROM sys.dm_exec_query_stats AS qs\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\nORDER BY qs.total_worker_time DESC;",
+                  "params": [],
+                  "notes": "dm_exec_query_stats 是缓存累计值，重启/缓存清理后会清零，对比要看 execution_count。"
+                },
+                {
+                  "title": "执行计划（实际 vs 预估）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "SSMS / DMV",
+                  "sql": "SELECT TOP 20\n       qs.plan_handle, qs.execution_count,\n       SUBSTRING(st.text, (qs.statement_start_offset / 2) + 1,\n         ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\n           ELSE qs.statement_end_offset END - qs.statement_start_offset) / 2) + 1) AS query_text\nFROM sys.dm_exec_query_stats AS qs\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\nORDER BY qs.execution_count DESC;\n-- 取某条计划的 XML（替换参数为 plan_handle 的二进制值，需在 SSMS 里转）：\n-- SELECT query_plan FROM sys.dm_exec_query_plan(<plan_handle>);\n-- 实际执行计划在 SSMS 里用 Ctrl+M 开“包括实际执行计划”再跑查询",
+                  "params": [
+                    "plan_handle"
+                  ],
+                  "notes": "DMV 给的是缓存的预估计划，真实执行耗时要看 SSMS 的实际执行计划。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞链（sys.dm_exec_requests）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "blocking_session_id",
+                  "sql": "SELECT TOP 20\n       r.session_id, r.blocking_session_id, r.wait_type, r.wait_time,\n       r.status, r.command,\n       SUBSTRING(t.text, (r.statement_start_offset / 2) + 1,\n         ((CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(t.text)\n           ELSE r.statement_end_offset END - r.statement_start_offset) / 2) + 1) AS query_text\nFROM sys.dm_exec_requests AS r\nCROSS APPLY sys.dm_exec_sql_text(r.sql_handle) AS t\nWHERE r.blocking_session_id <> 0\nORDER BY r.wait_time DESC;",
+                  "params": [],
+                  "notes": "blocking_session_id 是直接阻塞者，链的根因要顺着 blocking_session_id 往上追。"
+                },
+                {
+                  "title": "死锁图（Extended Events）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "xml_deadlock_report",
+                  "sql": "SELECT CAST(xet.target_data AS XML) AS xe_data\nFROM sys.dm_xe_session_targets AS xet\nJOIN sys.dm_xe_sessions AS xe\n  ON xe.address = xet.event_session_address\nWHERE xe.name = 'system_health'\n  AND xet.target_name = 'ring_buffer';\n-- 在返回的 XML 里找 xml_deadlock_report 事件；也可以在 SSMS 的扩展事件里直接看 system_health",
+                  "params": [],
+                  "notes": "死锁图在 system_health 会话的 ring_buffer 里，XML 需解析 xml_deadlock_report 事件。"
+                },
+                {
+                  "title": "KILL 会话",
+                  "versions": "2016+",
+                  "risk": "危险",
+                  "desc": "KILL spid",
+                  "sql": "-- 第 1 步：先确认要杀的会话\nSELECT session_id, login_name, host_name, program_name, status, command,\n       cpu_time, reads, writes\nFROM sys.dm_exec_sessions\nWHERE session_id = <spid>;\n-- DANGER：确认 spid 无误后再取消注释执行，KILL 会回滚该会话的事务\n-- KILL <spid>;",
+                  "params": [
+                    "spid"
+                  ],
+                  "notes": "KILL 前先确认 spid、登录名和正在跑的命令，杀掉后事务要回滚。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "数据库 / 文件大小 Top",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.database_files",
+                  "sql": "SELECT TOP 20\n       DB_NAME(database_id) AS db_name, name AS file_name,\n       type_desc, size * 8 / 1024 AS size_mb,\n       max_size * 8 / 1024 AS max_size_mb\nFROM sys.master_files\nORDER BY size DESC;\nSELECT TOP 20\n       name AS file_name, type_desc, size * 8 / 1024 AS size_mb,\n       growth, is_percent_growth\nFROM sys.database_files\nORDER BY size DESC;",
+                  "params": [],
+                  "notes": "sys.master_files 看所有库，sys.database_files 只看当前库，size 单位是 8KB 页。"
+                },
+                {
+                  "title": "日志文件增长 / VLF",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "DBCC LOGINFO",
+                  "sql": "SELECT name AS file_name, type_desc, size * 8 / 1024 AS size_mb,\n       growth, is_percent_growth\nFROM sys.database_files\nWHERE type_desc = 'LOG';\nDBCC LOGINFO;\n-- 2017+ 也可用：SELECT * FROM sys.dm_db_log_info(DB_ID());",
+                  "params": [],
+                  "notes": "DBCC LOGINFO 看 VLF 数量和状态，VLF 过多会影响日志恢复速度；2017+ 可用 dm_db_log_info。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "完整 / 差异 / 日志备份",
+                  "versions": "2016+",
+                  "risk": "谨慎",
+                  "desc": "BACKUP DATABASE/LOG",
+                  "sql": "-- 完整备份\nBACKUP DATABASE [<db_name>] TO DISK = '<backup_path>.bak' WITH INIT, COMPRESSION;\n-- 差异备份\nBACKUP DATABASE [<db_name>] TO DISK = '<backup_path>_diff.bak' WITH DIFFERENTIAL, COMPRESSION;\n-- 日志备份\nBACKUP LOG [<db_name>] TO DISK = '<backup_path>.trn' WITH COMPRESSION;",
+                  "params": [
+                    "db_name",
+                    "backup_path"
+                  ],
+                  "notes": "日志备份要求数据库是完整/大容量日志恢复模式，简单模式下 BACKUP LOG 会报错。"
+                },
+                {
+                  "title": "STOPAT 时间点恢复",
+                  "versions": "2016+",
+                  "risk": "危险",
+                  "desc": "RESTORE ... STOPAT",
+                  "sql": "-- 第 1 步：先查备份历史，确认全备+日志备的备份集都齐\nSELECT TOP 20 database_name, type, backup_start_date, backup_finish_date,\n       backup_size / 1024 / 1024 AS backup_size_mb\nFROM msdb.dbo.backupset\nWHERE database_name = '<db_name>'\nORDER BY backup_finish_date DESC;\n-- DANGER：恢复要在测试库/新库验证，先停写，确认 STOPAT 时间点后再取消注释\n-- RESTORE DATABASE [<db_name>] FROM DISK = '<full_backup_path>' WITH NORECOVERY;\n-- RESTORE LOG [<db_name>] FROM DISK = '<log_backup_path>' WITH STOPAT = '<target_time>', RECOVERY;",
+                  "params": [
+                    "db_name",
+                    "target_time",
+                    "full_backup_path",
+                    "log_backup_path"
+                  ],
+                  "notes": "STOPAT 恢复要按全备→日志备顺序还原，时间点必须落在日志备份覆盖范围内。"
+                },
+                {
+                  "title": "备份历史检查",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "msdb.dbo.backupset",
+                  "sql": "SELECT TOP 20\n       bs.database_name, bs.type, bs.backup_start_date, bs.backup_finish_date,\n       bs.backup_size / 1024 / 1024 AS backup_size_mb,\n       bmf.physical_device_name\nFROM msdb.dbo.backupset AS bs\nJOIN msdb.dbo.backupmediafamily AS bmf\n  ON bs.media_set_id = bmf.media_set_id\nORDER BY bs.backup_finish_date DESC;",
+                  "params": [],
+                  "notes": "type D=完整、I=差异、L=日志，恢复前先确认最近一次全备和日志备的时间。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "AlwaysOn",
+              "items": [
+                {
+                  "title": "可用性组状态 / 同步延迟",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.dm_hadr_availability_replica_states",
+                  "sql": "SELECT ar.replica_server_name, ars.role_desc,\n       ars.availability_mode_desc, ars.synchronization_health_desc,\n       ars.last_commit_time,\n       DATEDIFF(SECOND, ars.last_commit_time, GETDATE()) AS lag_seconds\nFROM sys.dm_hadr_availability_replica_states AS ars\nJOIN sys.availability_replicas AS ar\n  ON ars.replica_id = ar.replica_id\nORDER BY ars.role_desc;\nSELECT TOP 20\n       DB_NAME(database_id) AS db_name,\n       log_send_queue_size, redo_queue_size, last_commit_time\nFROM sys.dm_hadr_database_replica_states\nORDER BY log_send_queue_size DESC;",
+                  "params": [],
+                  "notes": "同步延迟看 log_send_queue_size 和 redo_queue_size，健康状态看 synchronization_health_desc。"
+                },
+                {
+                  "title": "故障转移演练清单",
+                  "versions": "2016+",
+                  "risk": "危险",
+                  "desc": "AG Failover",
+                  "sql": "-- 第 1 步：先查可用性组状态，确认目标副本已同步、健康\nSELECT ar.replica_server_name, ars.role_desc, ars.synchronization_health_desc\nFROM sys.dm_hadr_availability_replica_states AS ars\nJOIN sys.availability_replicas AS ar\n  ON ars.replica_id = ar.replica_id;\n-- DANGER：只在演练窗口、确认业务可停写后执行，生产切换前先在测试环境演练\n-- ALTER AVAILABILITY GROUP [<ag_name>] FAILOVER;",
+                  "params": [
+                    "ag_name"
+                  ],
+                  "notes": "手动故障转移要求目标副本同步且健康，异步副本切换可能丢数据。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "登录名 / 用户 / 角色",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.server_principals",
+                  "sql": "SELECT TOP 20 name, type_desc, is_disabled, create_date\nFROM sys.server_principals\nWHERE type IN ('S', 'U', 'G')\nORDER BY name;\nSELECT TOP 20\n       dp.name AS user_name, dp.type_desc,\n       dr.name AS role_name\nFROM sys.database_principals AS dp\nLEFT JOIN sys.database_role_members AS drm\n  ON drm.member_principal_id = dp.principal_id\nLEFT JOIN sys.database_principals AS dr\n  ON dr.principal_id = drm.role_principal_id\nORDER BY dp.name, dr.name;",
+                  "params": [],
+                  "notes": "server_principals 是服务器登录名，database_principals 是库内用户，两者要分开查。"
+                },
+                {
+                  "title": "审计（SQL Audit）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.server_audits",
+                  "sql": "SELECT name, is_state_enabled, type_desc, create_date\nFROM sys.server_audits\nORDER BY name;\nSELECT audit_id, name, status_desc, status_time\nFROM sys.dm_server_audit_status;",
+                  "params": [],
+                  "notes": "server_audits 看审计定义，dm_server_audit_status 看审计当前是否在运行。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dameng",
+      "name": "达梦 DM8",
+      "versions": "DM8 / DM8.1",
+      "note": "国产化迁移方向，GCA/YCA 相关",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "实例状态 / 版本",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "SELECT * FROM V$INSTANCE",
+                  "sql": "SELECT NAME, INSTANCE_NAME, VERSION, STATUS, STARTUP_TIME, MODE$ AS MODE FROM V$INSTANCE;",
+                  "params": [],
+                  "notes": "DM8 视图 V$INSTANCE，需 DBA 或相应查询权限。"
+                },
+                {
+                  "title": "表空间 / 数据文件",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DBA_TABLESPACES",
+                  "sql": "SELECT T.TABLESPACE_NAME, T.STATUS, T.CONTENTS, F.FILE_NAME, F.BYTES/1024/1024 AS SIZE_MB, F.AUTOEXTENSIBLE\nFROM DBA_TABLESPACES T LEFT JOIN DBA_DATA_FILES F ON T.TABLESPACE_NAME = F.TABLESPACE_NAME\nORDER BY T.TABLESPACE_NAME, F.FILE_NAME;",
+                  "params": [],
+                  "notes": "DBA_TABLESPACES / DBA_DATA_FILES 为 DM8 兼容 Oracle 的数据字典视图。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "缓存命中率 / 内存",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "V$BUFFERPOOL",
+                  "sql": "SELECT TOP 20 NAME, (1 - PHYSICAL_READS / NULLIF(GETS, 0)) * 100 AS HIT_RATIO_PCT, GETS, PHYSICAL_READS\nFROM V$BUFFERPOOL\nORDER BY NAME;",
+                  "params": [],
+                  "notes": "V$BUFFERPOOL 列名需在 DM8 实测核对，GETS/PHYSICAL_READS 为 0 时结果为 NULL。"
+                },
+                {
+                  "title": "统计信息收集",
+                  "versions": "DM8+",
+                  "risk": "谨慎",
+                  "desc": "DBMS_STATS",
+                  "sql": "-- 先确认表名与 schema，再执行（建议非高峰）：\n-- DANGER: DBMS_STATS.GATHER_TABLE_STATS('<SCHEMA>', '<TABLE>');\nSELECT TABLE_NAME, LAST_ANALYZED, NUM_ROWS FROM DBA_TABLES WHERE OWNER = '<SCHEMA>' AND TABLE_NAME = '<TABLE>';",
+                  "params": [
+                    {
+                      "name": "SCHEMA",
+                      "desc": "模式名"
+                    },
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "DM8 的 DBMS_STATS 与 Oracle 兼容，但参数细节需在 DM8 实测核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top（V$SQL）",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "V$SQL",
+                  "sql": "SELECT TOP 20 SQL_TEXT, ELAPSED_TIME, EXECUTIONS, ROWS_PROCESSED\nFROM V$SQL\nWHERE ELAPSED_TIME > 0\nORDER BY ELAPSED_TIME DESC;",
+                  "params": [],
+                  "notes": "V$SQL 在 DM8 中的列名（ELAPSED_TIME/ROWS_PROCESSED）需在 DM8 实测核对。"
+                },
+                {
+                  "title": "执行计划（EXPLAIN）",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DM EXPLAIN",
+                  "sql": "EXPLAIN SELECT * FROM <SCHEMA>.<TABLE> WHERE <CONDITION>;",
+                  "params": [
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "表名"
+                    },
+                    {
+                      "name": "CONDITION",
+                      "desc": "WHERE 条件"
+                    }
+                  ],
+                  "notes": "DM8 支持 EXPLAIN，输出格式与 Oracle 的 DBMS_XPLAN 不同，需在 DM8 实测核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁 / 会话",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "V$LOCK / V$SESSIONS",
+                  "sql": "SELECT TOP 20 L.SESS_ID AS BLOCKED_SESS, L.TRX_ID, S.USERNAME, S.CLIENT_IP, S.SQL_TEXT\nFROM V$LOCK L JOIN V$SESSIONS S ON L.SESS_ID = S.SESS_ID\nWHERE L.BLOCKED = 1\nORDER BY L.SESS_ID;",
+                  "params": [],
+                  "notes": "V$LOCK/V$SESSIONS 的阻塞标志列名需在 DM8 实测核对，如无 BLOCKED 列请改查 V$LOCK 全量。"
+                },
+                {
+                  "title": "杀会话",
+                  "versions": "DM8+",
+                  "risk": "危险",
+                  "desc": "SP_CLOSE_SESSION",
+                  "sql": "-- 1. 先确认（只读查询）：\nSELECT SESS_ID, USERNAME, CLIENT_IP, SQL_TEXT FROM V$SESSIONS WHERE SESS_ID = <SESS_ID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: SP_CLOSE_SESSION(<SESS_ID>);",
+                  "params": [
+                    {
+                      "name": "SESS_ID",
+                      "desc": "会话 ID"
+                    }
+                  ],
+                  "notes": "SP_CLOSE_SESSION 需 DBA 权限，杀会话前务必确认业务影响。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "表空间使用率",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DBA_DATA_FILES",
+                  "sql": "SELECT TOP 20 T.TABLESPACE_NAME, ROUND(SUM(F.BYTES)/1024/1024, 2) AS TOTAL_MB,\n  ROUND((SUM(F.BYTES) - MAX(NVL(FREE.BYTES, 0)))/1024/1024, 2) AS USED_MB,\n  ROUND((1 - MAX(NVL(FREE.BYTES, 0))/SUM(F.BYTES)) * 100, 2) AS USED_PCT\nFROM DBA_DATA_FILES F\nJOIN DBA_TABLESPACES T ON F.TABLESPACE_NAME = T.TABLESPACE_NAME\nLEFT JOIN (SELECT TABLESPACE_NAME, SUM(BYTES) BYTES FROM DBA_FREE_SPACE GROUP BY TABLESPACE_NAME) FREE\n  ON FREE.TABLESPACE_NAME = T.TABLESPACE_NAME\nGROUP BY T.TABLESPACE_NAME\nORDER BY USED_PCT DESC;",
+                  "params": [],
+                  "notes": "DBA_FREE_SPACE 在 DM8 中的列名需在 DM8 实测核对，>85% 预警。"
+                },
+                {
+                  "title": "大表 Top",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DBA_SEGMENTS",
+                  "sql": "SELECT TOP 20 OWNER, SEGMENT_NAME, SEGMENT_TYPE, ROUND(BYTES/1024/1024, 2) AS SIZE_MB\nFROM DBA_SEGMENTS\nORDER BY BYTES DESC;",
+                  "params": [],
+                  "notes": "DBA_SEGMENTS 为 DM8 兼容 Oracle 的数据字典视图。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "全备 / 增量（BACKUP DATABASE）",
+                  "versions": "DM8+",
+                  "risk": "谨慎",
+                  "desc": "DMRMAN",
+                  "sql": "-- shell: DMRMAN（DM8 备份恢复工具，需先停库或按 DMRMAN 要求操作）\n-- shell: dmrman CTLFILE=/dm8/data/DAMENG/dm.ini\n-- DMRMAN> BACKUP DATABASE '/dm8/data/DAMENG/dm.ini' FULL BACKUPSET '/dm8/backup/full_20261124';\n-- DMRMAN> BACKUP DATABASE '/dm8/data/DAMENG/dm.ini' INCREMENTAL BACKUPSET '/dm8/backup/incr_20261124';",
+                  "params": [
+                    {
+                      "name": "dm.ini 路径",
+                      "desc": "DM 实例配置文件路径"
+                    },
+                    {
+                      "name": "BACKUPSET",
+                      "desc": "备份集目录"
+                    }
+                  ],
+                  "notes": "DMRMAN 备份命令语法需按 DM8 版本核对，备份前确认备份目录磁盘余量。"
+                },
+                {
+                  "title": "闪回 / 时间点恢复",
+                  "versions": "DM8+",
+                  "risk": "危险",
+                  "desc": "DMRMAN RESTORE",
+                  "sql": "-- 1. 先确认备份集与归档（只读）：\n-- shell: dmrman CTLFILE=/dm8/data/DAMENG/dm.ini\n-- DMRMAN> SHOW BACKUPSETS;\n-- 2. 时间点恢复为危险操作，先在测试库演练：\n-- DANGER: DMRMAN> RESTORE DATABASE '/dm8/data/DAMENG/dm.ini' FROM BACKUPSET '/dm8/backup/full_20261124' UNTIL TIME '2026-11-24 10:00:00';",
+                  "params": [
+                    {
+                      "name": "BACKUPSET",
+                      "desc": "备份集目录"
+                    },
+                    {
+                      "name": "UNTIL TIME",
+                      "desc": "恢复目标时间"
+                    }
+                  ],
+                  "notes": "DMRMAN RESTORE 语法与 UNTIL 子句需在 DM8 实测核对，生产恢复前务必先停写并做副本。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "DW / DSC",
+              "items": [
+                {
+                  "title": "数据守护（DW）状态",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "V$DMWATCHER",
+                  "sql": "SELECT TOP 20 * FROM V$DMWATCHER;",
+                  "params": [],
+                  "notes": "V$DMWATCHER 的列名与返回值需在 DM8 实测核对，未部署数据守护时该视图可能无数据。"
+                },
+                {
+                  "title": "DSC 集群状态",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DMASM",
+                  "sql": "-- shell: DMASM / DSC 集群状态以 DMASM 工具与 dmsvc 进程为准\n-- shell: ps -ef | grep dmasm\n-- shell: dmasm --help\nSELECT NAME, INSTANCE_NAME, STATUS FROM V$INSTANCE;",
+                  "params": [],
+                  "notes": "DMASM/DSC 的状态查询方式需在 DM8 DSC 环境实测核对，不要凭印象执行集群命令。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "迁移",
+          "subcategories": [
+            {
+              "name": "迁移",
+              "items": [
+                {
+                  "title": "Oracle → DM 迁移检查清单",
+                  "versions": "DM8+",
+                  "risk": "谨慎",
+                  "desc": "DTS 工具 / 数据类型映射",
+                  "sql": "-- 迁移前检查（只读）：对象数量、数据类型、序列、存储过程\nSELECT OBJECT_TYPE, COUNT(*) AS CNT FROM DBA_OBJECTS WHERE OWNER = '<SCHEMA>' GROUP BY OBJECT_TYPE ORDER BY CNT DESC;\nSELECT TOP 20 TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM DBA_TAB_COLUMNS WHERE OWNER = '<SCHEMA>' AND DATA_TYPE IN ('NUMBER','VARCHAR2','CLOB','BLOB','DATE') ORDER BY TABLE_NAME;",
+                  "params": [
+                    {
+                      "name": "SCHEMA",
+                      "desc": "源模式名"
+                    }
+                  ],
+                  "notes": "迁移以 DM 官方 DTS 工具为准，数据类型映射（NUMBER/VARCHAR2 等）需逐项核对。"
+                },
+                {
+                  "title": "兼容性检查（方言差异）",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "NVL/ROWNUM 等",
+                  "sql": "-- 检查源库中 DM 不完全兼容的写法（在 Oracle 源库或迁移评估库执行）：\nSELECT TOP 20 OWNER, NAME, TYPE, LINE, TEXT FROM DBA_SOURCE\nWHERE TEXT LIKE '%ROWNUM%' OR TEXT LIKE '%NVL(%' OR TEXT LIKE '%SYSDATE%'\nORDER BY OWNER, NAME, LINE;",
+                  "params": [],
+                  "notes": "DBA_SOURCE 的列名需在 DM8 实测核对，ROWNUM/NVL/SYSDATE 在 DM8 多数兼容但仍需逐项核对。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oceanbase",
+      "name": "OceanBase",
+      "versions": "3.x / 4.x（MySQL模式 / Oracle模式）",
+      "note": "OBCA 考证中，国产化方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "集群",
+              "items": [
+                {
+                  "title": "集群 / 租户 / Zone 状态",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_server / __all_tenant",
+                  "sql": "SELECT SVR_IP, SVR_PORT, ZONE, STATUS FROM oceanbase.__all_server ORDER BY ZONE, SVR_IP LIMIT 20;\nSELECT TENANT_ID, TENANT_NAME, CREATE_TIME FROM oceanbase.__all_tenant LIMIT 20;",
+                  "params": [],
+                  "notes": "MySQL 模式用以上查询，Oracle 模式需改写为对应字典视图，需在 OB 4.x 实测核对。"
+                },
+                {
+                  "title": "资源单元（Unit）使用",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_unit",
+                  "sql": "SELECT UNIT_ID, TENANT_ID, ZONE, SVR_IP, MAX_CPU, MIN_CPU, MEMORY_SIZE/1024/1024 AS MEMORY_MB, STATUS\nFROM oceanbase.__all_unit\nORDER BY TENANT_ID, ZONE LIMIT 20;",
+                  "params": [],
+                  "notes": "__all_unit 的内存单位与列名需在 OB 4.x 实测核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "租户内存 / CPU 使用",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "GV$OB_MEMORY",
+                  "sql": "SELECT TENANT_ID, SVR_IP, HOLD AS MEMORY_HOLD_BYTES, USED AS MEMORY_USED_BYTES\nFROM oceanbase.GV$OB_MEMORY\nORDER BY USED DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "GV$OB_MEMORY 的列名（HOLD/USED）需在 OB 4.x 实测核对，Oracle 模式查询方式不同。"
+                },
+                {
+                  "title": "缓存 / 合并（Major Compaction）状态",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_zone / 合并进度",
+                  "sql": "SELECT ZONE, STATUS, START_TIME FROM oceanbase.__all_zone LIMIT 20;\n-- 合并进度以 OCP / obdiag 或 __all_virtual_merge_info 为准，视图名按版本不同：\n-- 需在 OB 4.x 实测核对合并进度视图名后再查，不要硬编列名。",
+                  "params": [],
+                  "notes": "合并进度视图名在 OB 3.x/4.x 间有变化，需在 OB 4.x 实测核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "Top SQL（GV$OB_SQL_AUDIT）",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "SQL Audit",
+                  "sql": "SELECT SQL_ID, SQL_TEXT, ELAPSED_TIME, EXECUTIONS\nFROM oceanbase.GV$OB_SQL_AUDIT\nWHERE ELAPSED_TIME > 0\nORDER BY ELAPSED_TIME DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "MySQL 模式用 LIMIT 20，Oracle 模式用 FETCH FIRST 20 ROWS ONLY，GV$OB_SQL_AUDIT 列名需在 OB 4.x 实测核对。"
+                },
+                {
+                  "title": "执行计划（EXPLAIN）",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "MySQL/Oracle模式区分",
+                  "sql": "EXPLAIN SELECT * FROM <TABLE> WHERE <CONDITION>;",
+                  "params": [
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    },
+                    {
+                      "name": "CONDITION",
+                      "desc": "WHERE 条件"
+                    }
+                  ],
+                  "notes": "MySQL 模式用 EXPLAIN，Oracle 模式用 EXPLAIN PLAN FOR，需按租户模式区分。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "活跃会话 / 阻塞",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "GV$OB_PROCESSLIST",
+                  "sql": "SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, INFO\nFROM oceanbase.GV$OB_PROCESSLIST\nWHERE COMMAND != 'Sleep'\nORDER BY TIME DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "GV$OB_PROCESSLIST 列名需在 OB 4.x 实测核对，MySQL 模式与 Oracle 模式字段不同。"
+                },
+                {
+                  "title": "杀会话（KILL）",
+                  "versions": "4.x",
+                  "risk": "危险",
+                  "desc": "KILL id",
+                  "sql": "-- 1. 先确认（只读查询）：\nSELECT ID, USER, HOST, COMMAND, TIME, INFO FROM oceanbase.GV$OB_PROCESSLIST WHERE ID = <ID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: KILL <ID>;",
+                  "params": [
+                    {
+                      "name": "ID",
+                      "desc": "会话 ID"
+                    }
+                  ],
+                  "notes": "OB 的 KILL 语法与 MySQL 兼容，Oracle 模式需按租户模式核对，杀会话前务必确认业务影响。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "表 / 分区大小",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_table",
+                  "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, ROUND(DATA_LENGTH/1024/1024, 2) AS DATA_MB, ROUND(INDEX_LENGTH/1024/1024, 2) AS INDEX_MB, TABLE_ROWS\nFROM INFORMATION_SCHEMA.TABLES\nWHERE TABLE_SCHEMA NOT IN ('information_schema','mysql','oceanbase','sys')\nORDER BY DATA_LENGTH DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "MySQL 模式用 INFORMATION_SCHEMA.TABLES，Oracle 模式用 DBA_SEGMENTS/DBA_TABLES，需按租户模式区分。"
+                },
+                {
+                  "title": "磁盘使用 / 数据压缩",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_virtual_disk_stat",
+                  "sql": "SELECT SVR_IP, TOTAL_SIZE/1024/1024/1024 AS TOTAL_GB, USED_SIZE/1024/1024/1024 AS USED_GB\nFROM oceanbase.__all_virtual_disk_stat LIMIT 20;",
+                  "params": [],
+                  "notes": "__all_virtual_disk_stat 的列名需在 OB 4.x 实测核对，如无该视图请改用 OCP 磁盘监控。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "物理备份 / 归档（OB 备份）",
+                  "versions": "4.x",
+                  "risk": "谨慎",
+                  "desc": "BACKUP DATABASE",
+                  "sql": "-- 需先在 OCP / SQL 中配置备份目的端（OSS/NFS 等），再执行：\n-- ALTER SYSTEM SET BACKUP_DEST='file:///obbackup';\n-- ALTER SYSTEM BACKUP DATABASE;",
+                  "params": [],
+                  "notes": "OB 物理备份语法与备份目的端配置需在 OB 4.x 实测核对，备份前确认归档已开启。"
+                },
+                {
+                  "title": "闪回 / 时间点恢复",
+                  "versions": "4.x",
+                  "risk": "危险",
+                  "desc": "FLASHBACK / PITR",
+                  "sql": "-- 1. 先确认备份与归档（只读）：\n-- ALTER SYSTEM SHOW BACKUP STATUS;\n-- 2. 时间点恢复为危险操作，先在测试租户演练：\n-- DANGER: Oracle 模式：FLASHBACK TABLE <TABLE> TO TIMESTAMP TO_TIMESTAMP('2026-11-24 10:00:00','YYYY-MM-DD HH24:MI:SS');\n-- DANGER: MySQL 模式无 FLASHBACK TABLE，需用备份+PITR 恢复到新租户，语法按 OB 4.x 核对。",
+                  "params": [
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "OB 的闪回能力按租户模式差异很大，MySQL 模式不支持 Oracle 式闪回，需在 OB 4.x 实测核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "高可用",
+              "items": [
+                {
+                  "title": "多副本 / Paxos 状态",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_ls",
+                  "sql": "SELECT LS_ID, TENANT_ID, SVR_IP, ROLE, STATUS FROM oceanbase.__all_ls ORDER BY TENANT_ID, LS_ID LIMIT 20;",
+                  "params": [],
+                  "notes": "__all_ls 的列名需在 OB 4.x 实测核对，副本角色以 OCP 展示为准。"
+                },
+                {
+                  "title": "主备切换演练",
+                  "versions": "4.x",
+                  "risk": "危险",
+                  "desc": "切换前确认",
+                  "sql": "-- 1. 先确认主备租户与日志同步（只读）：\nSELECT TENANT_ID, LS_ID, SVR_IP, ROLE FROM oceanbase.__all_ls ORDER BY TENANT_ID LIMIT 20;\n-- 2. 切换为危险操作，演练前停写确认：\n-- DANGER: 切换命令按 OB 4.x 主备租户方案执行（OCP 切换或 ALTER SYSTEM 切换），不要直接套用 Oracle DG 命令。",
+                  "params": [],
+                  "notes": "OB 主备切换与 Oracle DG 完全不同，命令需在 OB 4.x 实测核对，演练前务必停写确认。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "迁移",
+          "subcategories": [
+            {
+              "name": "迁移",
+              "items": [
+                {
+                  "title": "MySQL → OB 迁移清单",
+                  "versions": "4.x",
+                  "risk": "谨慎",
+                  "desc": "OMS 工具",
+                  "sql": "-- 迁移前检查（只读，MySQL 模式）：\nSELECT TABLE_SCHEMA, COUNT(*) AS TABLE_CNT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','mysql','sys') GROUP BY TABLE_SCHEMA ORDER BY TABLE_CNT DESC LIMIT 20;\nSELECT TABLE_SCHEMA, TABLE_NAME, ENGINE FROM INFORMATION_SCHEMA.TABLES WHERE ENGINE NOT IN ('InnoDB') LIMIT 20;",
+                  "params": [],
+                  "notes": "迁移以 OMS 工具为准，存储引擎、字符集、自增列需逐项核对。"
+                },
+                {
+                  "title": "Oracle → OB 迁移清单",
+                  "versions": "4.x",
+                  "risk": "谨慎",
+                  "desc": "OMS / 数据类型映射",
+                  "sql": "-- 迁移前检查（只读，Oracle 模式）：\nSELECT OWNER, OBJECT_TYPE, COUNT(*) AS CNT FROM DBA_OBJECTS GROUP BY OWNER, OBJECT_TYPE ORDER BY CNT DESC FETCH FIRST 20 ROWS ONLY;\n-- 需在 OB 4.x 实测核对 DBA_OBJECTS 在 Oracle 模式下的可用性，数据类型映射以 OMS 评估报告为准。",
+                  "params": [],
+                  "notes": "迁移以 OMS 工具为准，序列、同义词、存储过程等对象需逐项核对。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gbase",
+      "name": "GBase 8a / 8s",
+      "versions": "8a MPP / 8s OLTP",
+      "note": "GBase GCA，国产化方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "集群",
+              "items": [
+                {
+                  "title": "集群节点状态（8a）",
+                  "versions": "8a",
+                  "risk": "只读",
+                  "desc": "gcadmin",
+                  "sql": "-- shell: gcadmin（GBase 8a 集群管理命令）\n-- shell: gcadmin showcluster\n-- shell: gcadmin showdistribution",
+                  "params": [],
+                  "notes": "gcadmin 需在 8a 协调节点上执行，输出以 gcadmin 为准。"
+                },
+                {
+                  "title": "实例状态（8s）",
+                  "versions": "8s",
+                  "risk": "只读",
+                  "desc": "onstat",
+                  "sql": "-- shell: onstat（GBase 8s / Informix 兼容命令）\n-- shell: onstat -\n-- shell: onstat -g ses",
+                  "params": [],
+                  "notes": "onstat 需在 8s 实例所在服务器执行，参数需按 8s 版本核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "分布键 / 数据倾斜检查（8a）",
+                  "versions": "8a",
+                  "risk": "只读",
+                  "desc": "数据分布",
+                  "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','performance_schema') ORDER BY TABLE_ROWS DESC LIMIT 20;\n-- 分布键与倾斜详情以 8a 的分布信息表为准，系统表名按版本不同，需在 8a 实测核对，不要硬编。",
+                  "params": [],
+                  "notes": "8a 分布信息系统表名需在 8a 实测核对，本条只给通用表大小查询。"
+                },
+                {
+                  "title": "统计信息 / 优化器",
+                  "versions": "8a",
+                  "risk": "只读",
+                  "desc": "ANALYZE",
+                  "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS, UPDATE_TIME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','performance_schema') ORDER BY UPDATE_TIME ASC LIMIT 20;\n-- 如需收集统计信息（建议非高峰）：\n-- ANALYZE TABLE <SCHEMA>.<TABLE>;",
+                  "params": [
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "8a 的统计信息收集语法需在 8a 实测核对，ANALYZE 模板仅供参考。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top",
+                  "versions": "8a/8s",
+                  "risk": "只读",
+                  "desc": "系统表 / 日志",
+                  "sql": "-- 8a/8s 的慢 SQL 以慢查询日志与系统表为准，系统表名按版本不同：\n-- shell: 查看 8a 慢查询日志路径与配置（gbase 配置文件），再用文本工具分析\n-- 需在 8a/8s 实测核对慢 SQL 系统表名后再填具体查询，不要硬编。",
+                  "params": [],
+                  "notes": "8a/8s 慢 SQL 系统表名需在 8a/8s 实测核对，本条暂不编造系统表。"
+                },
+                {
+                  "title": "执行计划",
+                  "versions": "8a/8s",
+                  "risk": "只读",
+                  "desc": "EXPLAIN",
+                  "sql": "EXPLAIN SELECT * FROM <TABLE> WHERE <CONDITION>;",
+                  "params": [
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    },
+                    {
+                      "name": "CONDITION",
+                      "desc": "WHERE 条件"
+                    }
+                  ],
+                  "notes": "8a 与 8s 的 EXPLAIN 输出格式不同，需按版本核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "8a 备份（gcbackup）",
+                  "versions": "8a",
+                  "risk": "谨慎",
+                  "desc": "集群备份",
+                  "sql": "-- shell: gcbackup（GBase 8a 集群备份，需在协调节点执行）\n-- shell: gcbackup -h\n-- shell: gcbackup <备份目录>",
+                  "params": [
+                    {
+                      "name": "备份目录",
+                      "desc": "备份目标目录"
+                    }
+                  ],
+                  "notes": "gcbackup 参数需在 8a 实测核对，备份前确认磁盘余量与集群状态。"
+                },
+                {
+                  "title": "8s 逻辑备份（dbexport）",
+                  "versions": "8s",
+                  "risk": "谨慎",
+                  "desc": "dbexport",
+                  "sql": "-- shell: dbexport（GBase 8s / Informix 兼容逻辑备份）\n-- shell: dbexport -d <DATABASE> -o <备份目录>",
+                  "params": [
+                    {
+                      "name": "DATABASE",
+                      "desc": "数据库名"
+                    },
+                    {
+                      "name": "备份目录",
+                      "desc": "备份目标目录"
+                    }
+                  ],
+                  "notes": "dbexport 参数需在 8s 实测核对，备份前确认磁盘余量。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "迁移",
+          "subcategories": [
+            {
+              "name": "迁移",
+              "items": [
+                {
+                  "title": "Oracle/MySQL → GBase 迁移清单",
+                  "versions": "8a/8s",
+                  "risk": "谨慎",
+                  "desc": "迁移工具 / 类型映射",
+                  "sql": "-- 迁移前检查（只读，通用）：\nSELECT TABLE_SCHEMA, COUNT(*) AS TABLE_CNT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','performance_schema','mysql','sys') GROUP BY TABLE_SCHEMA ORDER BY TABLE_CNT DESC LIMIT 20;\n-- 数据类型映射、分布键选择、字符集需以 GBase 迁移工具评估报告为准。",
+                  "params": [],
+                  "notes": "迁移工具与类型映射需按 8a/8s 版本核对，分布键选择是 8a 迁移的关键。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tidb",
+      "name": "TiDB",
+      "versions": "6.x / 7.x / 8.x",
+      "note": "MySQL 兼容分布式，扩展方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "集群",
+              "items": [
+                {
+                  "title": "集群状态（tiup cluster display）",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "tiup",
+                  "sql": "-- shell: tiup cluster display <CLUSTER_NAME>\n-- shell: tiup cluster display <CLUSTER_NAME> --uptime",
+                  "params": [
+                    {
+                      "name": "CLUSTER_NAME",
+                      "desc": "集群名"
+                    }
+                  ],
+                  "notes": "tiup 需在中控机执行，集群状态以 tiup 输出与 Dashboard 为准。"
+                },
+                {
+                  "title": "TiKV / PD 状态",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "pd-ctl / Grafana",
+                  "sql": "SELECT TYPE, INSTANCE, STATUS, START_TIME FROM INFORMATION_SCHEMA.CLUSTER_INFO ORDER BY TYPE, INSTANCE LIMIT 20;\n-- shell: pd-ctl -u http://<PD_IP>:2379 store",
+                  "params": [
+                    {
+                      "name": "PD_IP",
+                      "desc": "PD 地址"
+                    }
+                  ],
+                  "notes": "TiKV/PD 详细状态以 Dashboard 与 pd-ctl 为准，CLUSTER_INFO 列名需在 TiDB 6.x+ 实测核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "热点 Region 检查",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "INFORMATION_SCHEMA.TIKV_REGION_STATUS",
+                  "sql": "SELECT REGION_ID, TABLE_ID, INDEX_ID, APPROXIMATE_SIZE, APPROXIMATE_KEYS FROM INFORMATION_SCHEMA.TIKV_REGION_STATUS ORDER BY APPROXIMATE_SIZE DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "TIKV_REGION_STATUS 的列名需在 TiDB 6.x+ 实测核对，热点以 Dashboard 热点图为准。"
+                },
+                {
+                  "title": "统计信息 / ANALYZE",
+                  "versions": "6.x+",
+                  "risk": "谨慎",
+                  "desc": "ANALYZE TABLE",
+                  "sql": "-- 先确认表与统计信息时间（只读）：\nSELECT TABLE_SCHEMA, TABLE_NAME, UPDATE_TIME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '<SCHEMA>' ORDER BY UPDATE_TIME ASC LIMIT 20;\n-- 收集统计信息（建议非高峰）：\n-- ANALYZE TABLE <SCHEMA>.<TABLE>;",
+                  "params": [
+                    {
+                      "name": "SCHEMA.TABLE",
+                      "desc": "表名"
+                    }
+                  ],
+                  "notes": "TiDB 的 ANALYZE 与 MySQL 兼容，生产建议非高峰执行。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢查询日志 / Top SQL（Dashboard）",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "INFORMATION_SCHEMA.SLOW_QUERY",
+                  "sql": "SELECT QUERY, QUERY_TIME, MEM_MAX, TIME FROM INFORMATION_SCHEMA.SLOW_QUERY WHERE QUERY_TIME > 1 ORDER BY QUERY_TIME DESC LIMIT 20;",
+                  "params": [],
+                  "notes": "SLOW_QUERY 需开启慢查询日志，字段名需在 TiDB 6.x+ 实测核对。"
+                },
+                {
+                  "title": "EXPLAIN ANALYZE",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "TiDB 执行计划",
+                  "sql": "EXPLAIN ANALYZE SELECT * FROM <TABLE> WHERE <CONDITION>;",
+                  "params": [
+                    {
+                      "name": "TABLE",
+                      "desc": "表名"
+                    },
+                    {
+                      "name": "CONDITION",
+                      "desc": "WHERE 条件"
+                    }
+                  ],
+                  "notes": "TiDB 的 EXPLAIN ANALYZE 与 MySQL 8.0 类似，输出含各算子真实耗时。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "高可用",
+              "items": [
+                {
+                  "title": "多副本 / Raft 状态",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "PD",
+                  "sql": "SELECT STORE_ID, ADDRESS, STATE, REGION_COUNT, LEADER_COUNT FROM INFORMATION_SCHEMA.TIKV_STORE_STATUS ORDER BY STORE_ID LIMIT 20;",
+                  "params": [],
+                  "notes": "TIKV_STORE_STATUS 的列名需在 TiDB 6.x+ 实测核对，副本详情以 PD/Dashboard 为准。"
+                },
+                {
+                  "title": "TiFlash 同步延迟",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "TiFlash 副本",
+                  "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, REPLICA_COUNT, AVAILABLE, PROGRESS FROM INFORMATION_SCHEMA.TIFLASH_REPLICA ORDER BY PROGRESS ASC LIMIT 20;",
+                  "params": [],
+                  "notes": "TIFLASH_REPLICA 的列名需在 TiDB 6.x+ 实测核对，PROGRESS<1 表示同步中。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "BR 全备 / PITR",
+                  "versions": "6.x+",
+                  "risk": "谨慎",
+                  "desc": "br backup / restore",
+                  "sql": "-- shell: br（TiDB 备份恢复工具，需配置存储目的端）\n-- shell: br backup full --pd \"http://<PD_IP>:2379\" --storage \"s3://<BUCKET>/<PATH>\" --log-file /tmp/br.log\n-- shell: br restore full --pd \"http://<PD_IP>:2379\" --storage \"s3://<BUCKET>/<PATH>\" --log-file /tmp/br-restore.log",
+                  "params": [
+                    {
+                      "name": "PD_IP",
+                      "desc": "PD 地址"
+                    },
+                    {
+                      "name": "BUCKET/PATH",
+                      "desc": "备份存储路径"
+                    }
+                  ],
+                  "notes": "BR 备份/PITR 语法与存储配置需在 TiDB 6.x+ 实测核对，恢复前先在测试集群演练。"
+                },
+                {
+                  "title": "Dumpling 逻辑备份",
+                  "versions": "6.x+",
+                  "risk": "谨慎",
+                  "desc": "dumpling",
+                  "sql": "-- shell: dumpling（TiDB 逻辑导出工具）\n-- shell: dumpling -u root -P 4000 -h <TIDB_IP> -o /tmp/dumpling_out --filetype sql",
+                  "params": [
+                    {
+                      "name": "TIDB_IP",
+                      "desc": "TiDB 地址"
+                    },
+                    {
+                      "name": "输出目录",
+                      "desc": "导出目录"
+                    }
+                  ],
+                  "notes": "dumpling 参数需在 TiDB 6.x+ 实测核对，大库优先用 BR 物理备份。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "common",
+      "name": "通用 / 跨库工具",
+      "versions": "全库通用",
+      "note": "不连库的本地工具，uTools 插件 v0.1 已有部分",
+      "categories": [
+        {
+          "name": "SQL 工具",
+          "subcategories": [
+            {
+              "name": "通用",
+              "items": [
+                {
+                  "title": "SQL 格式化（Oracle/MySQL/PG/SQL Server）",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "v0.1 已做",
+                  "sql": "见插件内置：lib/sql-core.js formatSql",
+                  "params": [],
+                  "notes": "v0.1 插件已实现，本地运行不联网，见 lib/sql-core.js。"
+                },
+                {
+                  "title": "方言互转 Oracle↔MySQL",
+                  "versions": "全版本",
+                  "risk": "谨慎",
+                  "desc": "v0.1 已做，规则式",
+                  "sql": "见插件内置：lib/sql-core.js convertDialect",
+                  "params": [],
+                  "notes": "v0.1 插件已实现，规则式互转非完整转译，上线前需在测试库跑一遍。"
+                },
+                {
+                  "title": "SQL 脱敏",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "v0.1 已做",
+                  "sql": "见插件内置：lib/sql-core.js desensitizeSql",
+                  "params": [],
+                  "notes": "v0.1 插件已实现，字符串→***、数字→?。"
+                },
+                {
+                  "title": "列表转 IN / 批量 INSERT",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "v0.1 已做",
+                  "sql": "见插件内置：lib/sql-core.js listToIn",
+                  "params": [],
+                  "notes": "v0.1 插件已实现，Oracle IN 超 1000 个会报 ORA-01795。"
+                },
+                {
+                  "title": "时间戳互转",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "v0.1 已做",
+                  "sql": "见插件内置：lib/sql-core.js timestampConvert",
+                  "params": [],
+                  "notes": "v0.1 插件已实现，10 位秒/13 位毫秒与日期互转。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "连接与检查",
+          "subcategories": [
+            {
+              "name": "通用",
+              "items": [
+                {
+                  "title": "连接串速查（JDBC / ODBC）",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "各库连接串模板",
+                  "sql": "-- Oracle: jdbc:oracle:thin:@<HOST>:1521/<SERVICE>\n-- MySQL/TiDB: jdbc:mysql://<HOST>:3306/<DB>?useSSL=false&serverTimezone=Asia/Shanghai\n-- PostgreSQL: jdbc:postgresql://<HOST>:5432/<DB>\n-- SQL Server: jdbc:sqlserver://<HOST>:1433;databaseName=<DB>\n-- 达梦 DM8: jdbc:dm://<HOST>:5236/<DB>\n-- OceanBase MySQL 模式: jdbc:mysql://<HOST>:2883/<DB>\n-- GBase 8a: jdbc:mysql://<HOST>:5258/<DB>",
+                  "params": [
+                    {
+                      "name": "HOST/DB",
+                      "desc": "地址与库名"
+                    }
+                  ],
+                  "notes": "端口与驱动名需按实际版本核对，连接串不要写真实密码。"
+                },
+                {
+                  "title": "端口 / 连通性检查",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "telnet / nc 模板",
+                  "sql": "-- shell: Windows\n-- shell: Test-NetConnection -ComputerName <HOST> -Port <PORT>\n-- shell: Linux/macOS\n-- shell: nc -zv <HOST> <PORT>\n-- shell: telnet <HOST> <PORT>",
+                  "params": [
+                    {
+                      "name": "HOST",
+                      "desc": "地址"
+                    },
+                    {
+                      "name": "PORT",
+                      "desc": "端口"
+                    }
+                  ],
+                  "notes": "常用端口：Oracle 1521、MySQL/TiDB 3306/4000、PG 5432、SQL Server 1433、DM 5236、OB 2883、Redis 6379。"
+                },
+                {
+                  "title": "字符集 / 时区检查",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "各库字符集查询",
+                  "sql": "-- Oracle: SELECT * FROM NLS_DATABASE_PARAMETERS WHERE PARAMETER IN ('NLS_CHARACTERSET','NLS_NCHAR_CHARACTERSET');\n-- MySQL: SHOW VARIABLES LIKE 'character_set%'; SHOW VARIABLES LIKE 'time_zone';\n-- PostgreSQL: SHOW server_encoding; SHOW timezone;\n-- SQL Server: SELECT SERVERPROPERTY('Collation');\n-- 达梦: SELECT * FROM V$PARAMETER WHERE NAME LIKE '%CHARSET%';\n-- TiDB: SHOW VARIABLES LIKE 'character_set%';",
+                  "params": [],
+                  "notes": "各库字符集查询语法不同，达梦条需在 DM8 实测核对。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "NoSQL（第二期）",
+          "subcategories": [
+            {
+              "name": "Redis / Mongo",
+              "items": [
+                {
+                  "title": "Redis 常用命令（INFO / SLOWLOG / 内存）",
+                  "versions": "6.x/7.x",
+                  "risk": "只读",
+                  "desc": "二期",
+                  "sql": "-- shell: redis-cli -h <HOST> -p 6379 INFO memory\n-- shell: redis-cli -h <HOST> -p 6379 SLOWLOG GET 10",
+                  "params": [
+                    {
+                      "name": "HOST",
+                      "desc": "Redis 地址"
+                    }
+                  ],
+                  "notes": "二期，Redis 6.x/7.x 示例命令，需按版本核对。"
+                },
+                {
+                  "title": "MongoDB 慢查询 / 索引",
+                  "versions": "6.x/7.x",
+                  "risk": "只读",
+                  "desc": "二期",
+                  "sql": "// MongoDB shell:\ndb.currentOp({ \"active\": true, \"secs_running\": { \"$gt\": 5 } });\ndb.<COLLECTION>.getIndexes();",
+                  "params": [
+                    {
+                      "name": "COLLECTION",
+                      "desc": "集合名"
+                    }
+                  ],
+                  "notes": "二期，MongoDB 6.x/7.x 示例命令，需按版本核对。"
+                },
+                {
+                  "title": "SQLite 常用命令",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "二期",
+                  "sql": "-- shell: sqlite3 <DB_FILE>.db\n-- sqlite> .tables\n-- sqlite> PRAGMA table_info(<TABLE>);",
+                  "params": [
+                    {
+                      "name": "DB_FILE/TABLE",
+                      "desc": "库文件与表名"
+                    }
+                  ],
+                  "notes": "二期，SQLite 3.x 示例命令，需按版本核对。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

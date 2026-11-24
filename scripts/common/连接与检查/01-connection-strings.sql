@@ -1,0 +1,13 @@
+-- 连接串速查（JDBC / ODBC）
+-- 适用版本：全版本
+-- 风险：只读
+-- 说明：各库连接串模板
+-- 备注：端口与驱动名需按实际版本核对，连接串不要写真实密码。
+
+-- Oracle: jdbc:oracle:thin:@<HOST>:1521/<SERVICE>
+-- MySQL/TiDB: jdbc:mysql://<HOST>:3306/<DB>?useSSL=false&serverTimezone=Asia/Shanghai
+-- PostgreSQL: jdbc:postgresql://<HOST>:5432/<DB>
+-- SQL Server: jdbc:sqlserver://<HOST>:1433;databaseName=<DB>
+-- 达梦 DM8: jdbc:dm://<HOST>:5236/<DB>
+-- OceanBase MySQL 模式: jdbc:mysql://<HOST>:2883/<DB>
+-- GBase 8a: jdbc:mysql://<HOST>:5258/<DB>

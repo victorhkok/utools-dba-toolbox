@@ -1,0 +1,9 @@
+-- 租户内存 / CPU 使用
+-- 适用版本：4.x
+-- 风险：只读
+-- 说明：GV$OB_MEMORY
+-- 备注：GV$OB_MEMORY 的列名（HOLD/USED）需在 OB 4.x 实测核对，Oracle 模式查询方式不同。
+
+SELECT TENANT_ID, SVR_IP, HOLD AS MEMORY_HOLD_BYTES, USED AS MEMORY_USED_BYTES
+FROM oceanbase.GV$OB_MEMORY
+ORDER BY USED DESC LIMIT 20;

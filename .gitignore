@@ -1,0 +1,17 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.zip
+
+# Node (plugin has no build step, no node_modules expected)
+node_modules/
+
+# uTools dev
+*.upkb
+dist/

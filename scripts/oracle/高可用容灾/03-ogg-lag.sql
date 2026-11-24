@@ -1,0 +1,13 @@
+-- OGG 抽取 / 投递延迟
+-- 适用版本：11g+
+-- 风险：只读
+-- 说明：INFO ALL / lag
+-- 提醒：把握一般：OGG 不是数据库内置功能，命令在 GGSCI 里执行，LAG 数值单位和版本有关；先确认 OGG 版本和进程名再查。
+
+-- GGSCI 命令（在 OGG 安装目录执行 ./ggsci，非 SQL）：
+-- INFO ALL
+-- INFO EXTRACT <extract_name>
+-- INFO REPLICAT <replicat_name>
+-- LAG EXTRACT <extract_name>
+-- LAG REPLICAT <replicat_name>
+-- INFO EXTRACT <extract_name>, DETAIL

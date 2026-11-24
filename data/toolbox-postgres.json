@@ -1,0 +1,350 @@
+{
+  "id": "postgres",
+  "name": "PostgreSQL",
+  "versions": "12 / 13 / 14 / 15 / 16 / 17",
+  "note": "PCA 考证中，主力扩展方向",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "实例",
+          "items": [
+            {
+              "title": "版本 / uptime / 连接数",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_stat_activity",
+              "sql": "SELECT version() AS pg_version;\nSELECT pg_postmaster_start_time() AS start_time,\n       now() - pg_postmaster_start_time() AS uptime;\nSELECT count(*) AS total_connections,\n       count(*) FILTER (WHERE state = 'active') AS active_connections\nFROM pg_stat_activity;",
+              "params": [],
+              "notes": "version() 和 pg_postmaster_start_time() 在所有 12+ 版本都有，连接数含后台进程。"
+            },
+            {
+              "title": "WAL 生成量",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_stat_wal",
+              "sql": "-- PG 14+ 首选 pg_stat_wal；12/13 没有该视图，用下面两条代替\nSELECT * FROM pg_stat_archiver;\nSELECT pg_current_wal_lsn() AS current_wal_lsn,\n       pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0') AS wal_bytes_since_start;\n-- PG 14+ 可另跑：SELECT wal_records, wal_bytes, wal_write_time FROM pg_stat_wal;",
+              "params": [],
+              "notes": "pg_stat_wal 仅 14+ 有，12/13 查 pg_stat_archiver + pg_current_wal_lsn()。"
+            },
+            {
+              "title": "后台进程状态",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_stat_activity backend_type",
+              "sql": "SELECT backend_type, state, count(*) AS cnt\nFROM pg_stat_activity\nGROUP BY backend_type, state\nORDER BY cnt DESC\nLIMIT 20;\nSELECT pid, backend_type, state, now() - query_start AS duration, left(query, 200) AS query\nFROM pg_stat_activity\nWHERE state = 'active'\nORDER BY query_start\nLIMIT 20;",
+              "params": [],
+              "notes": "backend_type 区分 autovacuum / walsender / checkpointer 等后台进程。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "参数与缓存",
+          "items": [
+            {
+              "title": "shared_buffers / work_mem 建议",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "SHOW",
+              "sql": "SELECT name, setting, unit, context, short_desc\nFROM pg_settings\nWHERE name IN ('shared_buffers','work_mem','maintenance_work_mem',\n               'effective_cache_size','max_connections')\nORDER BY name;\nSHOW shared_buffers;\nSHOW work_mem;",
+              "params": [],
+              "notes": "只读查询参数，不改配置；调参要结合内存总量和连接数，改完需 reload/重启看 context。"
+            },
+            {
+              "title": "缓存命中率（heap / index）",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_statio_user_tables",
+              "sql": "SELECT schemaname, relname,\n       heap_blks_read, heap_blks_hit,\n       round(100.0 * heap_blks_hit / NULLIF(heap_blks_hit + heap_blks_read, 0), 2) AS heap_hit_pct,\n       idx_blks_read, idx_blks_hit,\n       round(100.0 * idx_blks_hit / NULLIF(idx_blks_hit + idx_blks_read, 0), 2) AS idx_hit_pct\nFROM pg_statio_user_tables\nORDER BY heap_blks_read DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "heap 命中率低于 99% 且读盘大时先看 shared_buffers 和热点表。"
+            },
+            {
+              "title": "统计信息 / ANALYZE 状态",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_stat_user_tables",
+              "sql": "SELECT schemaname, relname, n_live_tup, n_mod_since_analyze,\n       last_analyze, last_autoanalyze\nFROM pg_stat_user_tables\nORDER BY n_mod_since_analyze DESC NULLS LAST\nLIMIT 20;",
+              "params": [],
+              "notes": "n_mod_since_analyze 大且 last_analyze 很旧，说明统计信息过期。"
+            },
+            {
+              "title": "自动 VACUUM 状态",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "autovacuum",
+              "sql": "SELECT name, setting, unit\nFROM pg_settings\nWHERE name LIKE 'autovacuum%'\nORDER BY name;\nSELECT schemaname, relname, last_autovacuum, last_autoanalyze,\n       autovacuum_count, autoanalyze_count\nFROM pg_stat_user_tables\nORDER BY last_autovacuum NULLS FIRST\nLIMIT 20;",
+              "params": [],
+              "notes": "autovacuum 关了或 long-running 事务堵住时，死元组会一直涨。"
+            }
+          ]
+        },
+        {
+          "name": "索引",
+          "items": [
+            {
+              "title": "未使用索引",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_stat_user_indexes idx_scan=0",
+              "sql": "SELECT schemaname, relname AS table_name, indexrelname AS index_name,\n       idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) AS index_size\nFROM pg_stat_user_indexes\nWHERE idx_scan = 0\n  AND indexrelname NOT LIKE 'pg_%'\nORDER BY pg_relation_size(indexrelid) DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "idx_scan=0 只说明统计周期内没用过，删前确认统计周期够长且不是唯一约束索引。"
+            },
+            {
+              "title": "缺失索引（hypopg 评估）",
+              "versions": "12+",
+              "risk": "谨慎",
+              "desc": "hypopg 扩展",
+              "sql": "-- 先确认扩展：hypopg 不在 PG 核心里，需先安装\nSELECT * FROM pg_extension WHERE extname = 'hypopg';\n-- 模板：用参数替换表名和列名，只做假设评估，不会真建索引\n-- SELECT * FROM hypopg_create_index('CREATE INDEX ON <table_name> (<column_list>)');\n-- SELECT * FROM hypopg_list_indexes();\n-- 评估完清理：SELECT * FROM hypopg_drop_index(<hypopg_index_oid>);\n-- 再用 EXPLAIN 对比加假设索引前后的计划",
+              "params": [
+                "table_name",
+                "column_list"
+              ],
+              "notes": "hypopg 是第三方扩展，需先 CREATE EXTENSION hypopg；它只做假设，不建真实索引。"
+            },
+            {
+              "title": "膨胀索引 / bloat 评估",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pgstattuple",
+              "sql": "-- 先确认扩展：pgstattuple 不在 PG 核心里\nSELECT * FROM pg_extension WHERE extname = 'pgstattuple';\n-- 单个索引评估（替换参数为索引名）：\n-- SELECT * FROM pgstatindex('<index_name>');\n-- 无扩展时的替代：只看索引大小排序，再结合表膨胀判断\nSELECT schemaname, relname AS table_name, indexrelname AS index_name,\n       pg_size_pretty(pg_relation_size(indexrelid)) AS index_size\nFROM pg_stat_user_indexes\nORDER BY pg_relation_size(indexrelid) DESC\nLIMIT 20;",
+              "params": [
+                "index_name"
+              ],
+              "notes": "pgstatindex 一次只能查一个索引，全库 bloat 需循环或用 pgstattuple 的近似估算查询。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "pg_stat_statements Top SQL",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "需开启扩展",
+              "sql": "-- 前置（一次）：CREATE EXTENSION pg_stat_statements;\n-- PG 13+ 用 total_exec_time / mean_exec_time；PG 12 用 total_time / mean_time\nSELECT query, calls,\n       round(total_exec_time::numeric, 2) AS total_exec_time_ms,\n       round(mean_exec_time::numeric, 2) AS mean_exec_time_ms,\n       rows\nFROM pg_stat_statements\nORDER BY total_exec_time DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "需先 CREATE EXTENSION pg_stat_statements 并在 shared_preload_libraries 里加载，PG 12 列名是 total_time/mean_time。"
+            },
+            {
+              "title": "慢查询日志（log_min_duration）",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "postgresql.conf",
+              "sql": "SELECT name, setting, unit, context\nFROM pg_settings\nWHERE name IN ('log_min_duration_statement','log_statement',\n               'log_directory','logging_collector','log_filename')\nORDER BY name;\n-- 改阈值模板（改完 pg_reload_conf() 即可，不用重启）：\n-- ALTER SYSTEM SET log_min_duration_statement = '1000';\n-- SELECT pg_reload_conf();",
+              "params": [],
+              "notes": "log_min_duration_statement 单位是毫秒，设 1000 即只记 >1s 的；改配置用 ALTER SYSTEM + reload。"
+            },
+            {
+              "title": "EXPLAIN ANALYZE",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "真实耗时+Buffers",
+              "sql": "-- 把 <query_text> 换成要分析的 SQL；真实执行，会跑完查询\nEXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) <query_text>;",
+              "params": [
+                "query_text"
+              ],
+              "notes": "EXPLAIN ANALYZE 会真实执行，大查询/写操作先在测试库跑，别在生产直接跑。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "锁 / 会话",
+      "subcategories": [
+        {
+          "name": "锁",
+          "items": [
+            {
+              "title": "阻塞锁链（pg_blocking_pids）",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_stat_activity",
+              "sql": "SELECT blocked.pid AS blocked_pid, blocked.usename AS blocked_user,\n       blocked.application_name, blocked.state,\n       now() - blocked.query_start AS blocked_duration,\n       blocking.pid AS blocking_pid, blocking.usename AS blocking_user,\n       left(blocked.query, 200) AS blocked_query\nFROM pg_stat_activity blocked\nJOIN pg_stat_activity blocking\n  ON blocking.pid = ANY (pg_blocking_pids(blocked.pid))\nWHERE cardinality(pg_blocking_pids(blocked.pid)) > 0\nORDER BY blocked_duration DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "pg_blocking_pids() 返回阻塞该会话的 pid 数组，根因一般是排头的 blocking_pid。"
+            },
+            {
+              "title": "死锁统计",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_stat_database deadlocks",
+              "sql": "SELECT datname, deadlocks, stats_reset\nFROM pg_stat_database\nORDER BY deadlocks DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "pg_stat_database 只有死锁次数，没有死锁明细，明细要去日志里找 deadlock detected。"
+            },
+            {
+              "title": "终止会话（pg_terminate_backend）",
+              "versions": "12+",
+              "risk": "危险",
+              "desc": "先确认",
+              "sql": "-- 第 1 步：先确认要杀的会话（长运行活跃会话）\nSELECT pid, usename, application_name, client_addr, state,\n       now() - query_start AS duration, left(query, 200) AS query\nFROM pg_stat_activity\nWHERE state = 'active'\n  AND now() - query_start > interval '5 minutes'\nORDER BY duration DESC\nLIMIT 20;\n-- DANGER：确认 pid 无误后再取消注释执行，杀错会话会中断业务\n-- SELECT pg_terminate_backend(<pid>);",
+              "params": [
+                "pid"
+              ],
+              "notes": "先查清 pid、用户和 SQL 再杀；pg_terminate_backend 会直接断开该连接。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间",
+      "subcategories": [
+        {
+          "name": "空间",
+          "items": [
+            {
+              "title": "库 / 表大小 Top",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_database_size",
+              "sql": "SELECT datname, pg_size_pretty(pg_database_size(datname)) AS db_size\nFROM pg_database\nORDER BY pg_database_size(datname) DESC\nLIMIT 20;\nSELECT schemaname, relname,\n       pg_size_pretty(pg_total_relation_size(relid)) AS total_size,\n       pg_size_pretty(pg_relation_size(relid)) AS table_size,\n       pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) AS index_size\nFROM pg_stat_user_tables\nORDER BY pg_total_relation_size(relid) DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "pg_total_relation_size 含表+索引+TOAST，单看表大小用 pg_relation_size。"
+            },
+            {
+              "title": "表膨胀 / VACUUM 建议",
+              "versions": "12+",
+              "risk": "谨慎",
+              "desc": "VACUUM / VACUUM FULL 区分",
+              "sql": "-- 第 1 步：先看死元组和上次 VACUUM\nSELECT schemaname, relname, n_live_tup, n_dead_tup,\n       last_vacuum, last_autovacuum\nFROM pg_stat_user_tables\nORDER BY n_dead_tup DESC\nLIMIT 20;\n-- 普通 VACUUM 不锁表，可在线跑（替换表名）：\n-- VACUUM (VERBOSE, ANALYZE) <schema_name>.<table_name>;\n-- DANGER：VACUUM FULL 会重写整张表、独占锁、需额外磁盘空间，非高峰+确认后再跑\n-- VACUUM FULL <schema_name>.<table_name>;",
+              "params": [
+                "schema_name",
+                "table_name"
+              ],
+              "notes": "VACUUM 不锁表，VACUUM FULL 会独占锁并重写表，两者不要混用。"
+            },
+            {
+              "title": "死元组比例",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "n_dead_tup",
+              "sql": "SELECT schemaname, relname, n_live_tup, n_dead_tup,\n       round(100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0), 2) AS dead_pct,\n       last_autovacuum\nFROM pg_stat_user_tables\nORDER BY n_dead_tup DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "死元组占比高且 autovacuum 没跟上时，先查长事务是否堵住了 VACUUM。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "pg_dump / pg_dumpall",
+              "versions": "12+",
+              "risk": "谨慎",
+              "desc": "逻辑备份",
+              "sql": "-- shell: pg_dump -h <host> -U <user> -d <db_name> -F c -f <backup_path>.dump\n-- shell: pg_dump -h <host> -U <user> -d <db_name> -F p -f <backup_path>.sql\n-- shell: pg_dumpall -h <host> -U <user> -f <backup_path>-globals.sql\n-- shell: pg_dump --version",
+              "params": [
+                "host",
+                "user",
+                "db_name",
+                "backup_path"
+              ],
+              "notes": "pg_dump 是逻辑备份，大库慢；-F c 是自定义格式，恢复用 pg_restore。"
+            },
+            {
+              "title": "pg_basebackup 物理备份",
+              "versions": "12+",
+              "risk": "谨慎",
+              "desc": "流复制备份",
+              "sql": "-- shell: pg_basebackup -h <host> -U <replicator_user> -D <backup_dir> -Ft -z -P -v -X stream\n-- shell: pg_basebackup -h <host> -U <replicator_user> -D <backup_dir> -Fp -P -v -X stream",
+              "params": [
+                "host",
+                "replicator_user",
+                "backup_dir"
+              ],
+              "notes": "pg_basebackup 需复制账号有 REPLICATION 权限，-X stream 才会把 WAL 一起备走。"
+            },
+            {
+              "title": "PITR（WAL + recovery_target_time）",
+              "versions": "12+",
+              "risk": "危险",
+              "desc": "需连续WAL",
+              "sql": "-- 第 1 步：先确认归档和 WAL 连续\nSELECT * FROM pg_stat_archiver;\nSHOW archive_mode;\nSHOW archive_command;\nSELECT pg_current_wal_lsn() AS current_wal_lsn;\n-- DANGER：PITR 要在新目录恢复，不是在原库直接跑；先停写、备好全备+连续 WAL\n-- postgresql.conf: restore_command = 'cp /path/to/archive/%f %p'\n-- postgresql.conf: recovery_target_time = '<target_time>'\n-- 12+ 不再用 recovery.conf，改用 postgresql.conf + 空文件 recovery.signal",
+              "params": [
+                "target_time"
+              ],
+              "notes": "PITR 要求归档连续、WAL 不缺；12+ 用 recovery.signal，不再用 recovery.conf。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用",
+      "subcategories": [
+        {
+          "name": "流复制",
+          "items": [
+            {
+              "title": "主从延迟（pg_stat_replication）",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "replay_lag",
+              "sql": "SELECT application_name, client_addr, state, sync_state,\n       pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn) AS replay_lag_bytes,\n       replay_lag, write_lag, flush_lag\nFROM pg_stat_replication\nORDER BY replay_lag DESC\nLIMIT 20;",
+              "params": [],
+              "notes": "replay_lag 是备库回放延迟，write/flush 延迟大而 replay 小时说明回放跟不上。"
+            },
+            {
+              "title": "同步 / 异步模式检查",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "synchronous_standby_names",
+              "sql": "SHOW synchronous_standby_names;\nSHOW synchronous_commit;\nSELECT application_name, sync_state, state\nFROM pg_stat_replication\nORDER BY application_name\nLIMIT 20;",
+              "params": [],
+              "notes": "synchronous_standby_names 为空即异步；同步模式下主库提交要等备库确认。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "用户 / 安全",
+      "subcategories": [
+        {
+          "name": "账号",
+          "items": [
+            {
+              "title": "角色 / 权限清单",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_roles",
+              "sql": "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolcanlogin,\n       rolconnlimit, rolvaliduntil\nFROM pg_roles\nORDER BY rolname\nLIMIT 20;\nSELECT grantee, table_schema, table_name, privilege_type\nFROM information_schema.role_table_grants\nORDER BY grantee, table_schema, table_name\nLIMIT 20;",
+              "params": [],
+              "notes": "pg_roles 看角色属性，表级授权看 role_table_grants，两者要分开查。"
+            },
+            {
+              "title": "行级安全（RLS）检查",
+              "versions": "12+",
+              "risk": "只读",
+              "desc": "pg_policies",
+              "sql": "SELECT schemaname, tablename, rowsecurity AS rls_enabled, relforcerowsecurity\nFROM pg_tables\nWHERE rowsecurity\nORDER BY schemaname, tablename\nLIMIT 20;\nSELECT schemaname, tablename, policyname, permissive, roles, cmd\nFROM pg_policies\nORDER BY schemaname, tablename, policyname\nLIMIT 20;",
+              "params": [],
+              "notes": "RLS 只对表所有者之外的用户生效，超级用户和表所有者默认绕过。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

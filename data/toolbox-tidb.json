@@ -1,0 +1,190 @@
+{
+  "id": "tidb",
+  "name": "TiDB",
+  "versions": "6.x / 7.x / 8.x",
+  "note": "MySQL 兼容分布式，扩展方向",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "集群",
+          "items": [
+            {
+              "title": "集群状态（tiup cluster display）",
+              "versions": "6.x+",
+              "risk": "只读",
+              "desc": "tiup",
+              "sql": "-- shell: tiup cluster display <CLUSTER_NAME>\n-- shell: tiup cluster display <CLUSTER_NAME> --uptime",
+              "params": [
+                {
+                  "name": "CLUSTER_NAME",
+                  "desc": "集群名"
+                }
+              ],
+              "notes": "tiup 需在中控机执行，集群状态以 tiup 输出与 Dashboard 为准。"
+            },
+            {
+              "title": "TiKV / PD 状态",
+              "versions": "6.x+",
+              "risk": "只读",
+              "desc": "pd-ctl / Grafana",
+              "sql": "SELECT TYPE, INSTANCE, STATUS, START_TIME FROM INFORMATION_SCHEMA.CLUSTER_INFO ORDER BY TYPE, INSTANCE LIMIT 20;\n-- shell: pd-ctl -u http://<PD_IP>:2379 store",
+              "params": [
+                {
+                  "name": "PD_IP",
+                  "desc": "PD 地址"
+                }
+              ],
+              "notes": "TiKV/PD 详细状态以 Dashboard 与 pd-ctl 为准，CLUSTER_INFO 列名需在 TiDB 6.x+ 实测核对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "性能",
+          "items": [
+            {
+              "title": "热点 Region 检查",
+              "versions": "6.x+",
+              "risk": "只读",
+              "desc": "INFORMATION_SCHEMA.TIKV_REGION_STATUS",
+              "sql": "SELECT REGION_ID, TABLE_ID, INDEX_ID, APPROXIMATE_SIZE, APPROXIMATE_KEYS FROM INFORMATION_SCHEMA.TIKV_REGION_STATUS ORDER BY APPROXIMATE_SIZE DESC LIMIT 20;",
+              "params": [],
+              "notes": "TIKV_REGION_STATUS 的列名需在 TiDB 6.x+ 实测核对，热点以 Dashboard 热点图为准。"
+            },
+            {
+              "title": "统计信息 / ANALYZE",
+              "versions": "6.x+",
+              "risk": "谨慎",
+              "desc": "ANALYZE TABLE",
+              "sql": "-- 先确认表与统计信息时间（只读）：\nSELECT TABLE_SCHEMA, TABLE_NAME, UPDATE_TIME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = '<SCHEMA>' ORDER BY UPDATE_TIME ASC LIMIT 20;\n-- 收集统计信息（建议非高峰）：\n-- ANALYZE TABLE <SCHEMA>.<TABLE>;",
+              "params": [
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "TiDB 的 ANALYZE 与 MySQL 兼容，生产建议非高峰执行。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "慢查询日志 / Top SQL（Dashboard）",
+              "versions": "6.x+",
+              "risk": "只读",
+              "desc": "INFORMATION_SCHEMA.SLOW_QUERY",
+              "sql": "SELECT QUERY, QUERY_TIME, MEM_MAX, TIME FROM INFORMATION_SCHEMA.SLOW_QUERY WHERE QUERY_TIME > 1 ORDER BY QUERY_TIME DESC LIMIT 20;",
+              "params": [],
+              "notes": "SLOW_QUERY 需开启慢查询日志，字段名需在 TiDB 6.x+ 实测核对。"
+            },
+            {
+              "title": "EXPLAIN ANALYZE",
+              "versions": "6.x+",
+              "risk": "只读",
+              "desc": "TiDB 执行计划",
+              "sql": "EXPLAIN ANALYZE SELECT * FROM <TABLE> WHERE <CONDITION>;",
+              "params": [
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                },
+                {
+                  "name": "CONDITION",
+                  "desc": "WHERE 条件"
+                }
+              ],
+              "notes": "TiDB 的 EXPLAIN ANALYZE 与 MySQL 8.0 类似，输出含各算子真实耗时。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用",
+      "subcategories": [
+        {
+          "name": "高可用",
+          "items": [
+            {
+              "title": "多副本 / Raft 状态",
+              "versions": "6.x+",
+              "risk": "只读",
+              "desc": "PD",
+              "sql": "SELECT STORE_ID, ADDRESS, STATE, REGION_COUNT, LEADER_COUNT FROM INFORMATION_SCHEMA.TIKV_STORE_STATUS ORDER BY STORE_ID LIMIT 20;",
+              "params": [],
+              "notes": "TIKV_STORE_STATUS 的列名需在 TiDB 6.x+ 实测核对，副本详情以 PD/Dashboard 为准。"
+            },
+            {
+              "title": "TiFlash 同步延迟",
+              "versions": "6.x+",
+              "risk": "只读",
+              "desc": "TiFlash 副本",
+              "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, REPLICA_COUNT, AVAILABLE, PROGRESS FROM INFORMATION_SCHEMA.TIFLASH_REPLICA ORDER BY PROGRESS ASC LIMIT 20;",
+              "params": [],
+              "notes": "TIFLASH_REPLICA 的列名需在 TiDB 6.x+ 实测核对，PROGRESS<1 表示同步中。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "BR 全备 / PITR",
+              "versions": "6.x+",
+              "risk": "谨慎",
+              "desc": "br backup / restore",
+              "sql": "-- shell: br（TiDB 备份恢复工具，需配置存储目的端）\n-- shell: br backup full --pd \"http://<PD_IP>:2379\" --storage \"s3://<BUCKET>/<PATH>\" --log-file /tmp/br.log\n-- shell: br restore full --pd \"http://<PD_IP>:2379\" --storage \"s3://<BUCKET>/<PATH>\" --log-file /tmp/br-restore.log",
+              "params": [
+                {
+                  "name": "PD_IP",
+                  "desc": "PD 地址"
+                },
+                {
+                  "name": "BUCKET/PATH",
+                  "desc": "备份存储路径"
+                }
+              ],
+              "notes": "BR 备份/PITR 语法与存储配置需在 TiDB 6.x+ 实测核对，恢复前先在测试集群演练。"
+            },
+            {
+              "title": "Dumpling 逻辑备份",
+              "versions": "6.x+",
+              "risk": "谨慎",
+              "desc": "dumpling",
+              "sql": "-- shell: dumpling（TiDB 逻辑导出工具）\n-- shell: dumpling -u root -P 4000 -h <TIDB_IP> -o /tmp/dumpling_out --filetype sql",
+              "params": [
+                {
+                  "name": "TIDB_IP",
+                  "desc": "TiDB 地址"
+                },
+                {
+                  "name": "输出目录",
+                  "desc": "导出目录"
+                }
+              ],
+              "notes": "dumpling 参数需在 TiDB 6.x+ 实测核对，大库优先用 BR 物理备份。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

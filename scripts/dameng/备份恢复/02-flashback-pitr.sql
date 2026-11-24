@@ -1,0 +1,11 @@
+-- 闪回 / 时间点恢复
+-- 适用版本：DM8+
+-- 风险：危险
+-- 说明：DMRMAN RESTORE
+-- 备注：DMRMAN RESTORE 语法与 UNTIL 子句需在 DM8 实测核对，生产恢复前务必先停写并做副本。
+
+-- 1. 先确认备份集与归档（只读）：
+-- shell: dmrman CTLFILE=/dm8/data/DAMENG/dm.ini
+-- DMRMAN> SHOW BACKUPSETS;
+-- 2. 时间点恢复为危险操作，先在测试库演练：
+-- DANGER: DMRMAN> RESTORE DATABASE '/dm8/data/DAMENG/dm.ini' FROM BACKUPSET '/dm8/backup/full_20261124' UNTIL TIME '2026-11-24 10:00:00';

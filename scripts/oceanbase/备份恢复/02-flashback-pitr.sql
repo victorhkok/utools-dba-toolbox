@@ -1,0 +1,11 @@
+-- 闪回 / 时间点恢复
+-- 适用版本：4.x
+-- 风险：危险
+-- 说明：FLASHBACK / PITR
+-- 备注：OB 的闪回能力按租户模式差异很大，MySQL 模式不支持 Oracle 式闪回，需在 OB 4.x 实测核对。
+
+-- 1. 先确认备份与归档（只读）：
+-- ALTER SYSTEM SHOW BACKUP STATUS;
+-- 2. 时间点恢复为危险操作，先在测试租户演练：
+-- DANGER: Oracle 模式：FLASHBACK TABLE <TABLE> TO TIMESTAMP TO_TIMESTAMP('2026-11-24 10:00:00','YYYY-MM-DD HH24:MI:SS');
+-- DANGER: MySQL 模式无 FLASHBACK TABLE，需用备份+PITR 恢复到新租户，语法按 OB 4.x 核对。

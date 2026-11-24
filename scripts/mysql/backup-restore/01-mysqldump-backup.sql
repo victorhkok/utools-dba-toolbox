@@ -1,0 +1,11 @@
+-- mysqldump 全备 / 单库 / 单表
+-- 适用版本：5.7+
+-- 风险：谨慎
+-- 说明：--single-transaction
+-- 大类：备份恢复 / 小类：逻辑备份
+-- shell: 全库备份
+-- mysqldump --single-transaction --quick --master-data=2 --routines --events --triggers -u <user> -p <db> > "<backup_dir>/<db>_$(date +%F).sql"
+-- shell: 单表备份
+-- mysqldump --single-transaction --quick -u <user> -p <db> <table> > "<backup_dir>/<db>_<table>.sql"
+-- 备份前先确认 binlog 位置：
+SHOW BINARY LOGS;

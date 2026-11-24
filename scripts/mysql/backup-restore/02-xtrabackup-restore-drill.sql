@@ -1,0 +1,9 @@
+-- XtraBackup 恢复演练
+-- 适用版本：5.7+
+-- 风险：谨慎
+-- 说明：--prepare + --copy-back
+-- 大类：备份恢复 / 小类：物理备份
+-- DANGER: 恢复演练只在测试库做，--copy-back 会覆盖 datadir，执行前必须先停 MySQL。
+-- shell: xtrabackup --prepare --apply-log-only --target-dir="<base_dir>"
+-- shell: xtrabackup --prepare --target-dir="<base_dir>"
+-- shell: xtrabackup --copy-back --target-dir="<base_dir>" --datadir="<datadir>"

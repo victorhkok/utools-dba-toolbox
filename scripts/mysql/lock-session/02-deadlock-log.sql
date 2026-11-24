@@ -1,0 +1,6 @@
+-- 死锁日志（SHOW ENGINE INNODB STATUS）
+-- 适用版本：5.7+
+-- 风险：只读
+-- 说明：LATEST DETECTED DEADLOCK
+-- 大类：锁 / 会话 / 小类：锁
+SHOW ENGINE INNODB STATUS;

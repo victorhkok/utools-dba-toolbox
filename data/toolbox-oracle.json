@@ -1,0 +1,767 @@
+{
+  "id": "oracle",
+  "name": "Oracle",
+  "versions": "11gR2 / 12c / 19c / 21c / 23ai",
+  "note": "你的主力，OCP 11g，RAC/DG/OGG",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "实例与版本",
+          "items": [
+            {
+              "title": "实例状态 / 版本 / 启动时间",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$instance, v$database",
+              "sql": "SELECT i.instance_name,\n       i.host_name,\n       i.version,\n       i.status,\n       i.startup_time,\n       d.name        AS db_name,\n       d.open_mode,\n       d.log_mode\nFROM   v$instance i,\n       v$database d;",
+              "params": [],
+              "notes": "v$instance/v$database 均需 SYSDBA 或 SELECT_CATALOG_ROLE 权限；RAC 下每节点各查一次。"
+            },
+            {
+              "title": "监听与服务状态",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "lsnrctl status / srvctl status",
+              "sql": "-- Shell / OS 命令（非 SQL，在数据库服务器上执行）：\n-- lsnrctl status\n-- srvctl status database -d <db_name>\n-- srvctl status listener\n-- crsctl check cluster -all        -- RAC 环境才有\n-- 另查数据库内注册的服务：\nSELECT name, network_name, failover_method\nFROM   dba_services\nORDER  BY name;",
+              "params": [
+                "<db_name>"
+              ],
+              "notes": "lsnrctl/srvctl 需在服务器 OS 执行，SQL*Plus 里跑不了；先确认 ORACLE_HOME/ORACLE_SID。"
+            },
+            {
+              "title": "数据库 / PDB 列表",
+              "versions": "12c+",
+              "risk": "只读",
+              "desc": "CDB+PDB，11g无PDB",
+              "sql": "SELECT name, cdb, open_mode, log_mode\nFROM   v$database;\n\nSELECT con_id, name, open_mode, restricted, total_size\nFROM   v$pdbs\nORDER  BY con_id;",
+              "params": [],
+              "notes": "仅 12c+ 有 v$pdbs / CDB 概念，11g 跑第二条会报 ORA-00942；先查 v$database.cdb 确认是否 CDB。"
+            },
+            {
+              "title": "无效对象清单",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "dba_objects status=INVALID",
+              "sql": "SELECT owner, object_type, COUNT(*) AS cnt\nFROM   dba_objects\nWHERE  status = 'INVALID'\nGROUP  BY owner, object_type\nORDER  BY cnt DESC;\n\n-- 明细（前 50）：\nSELECT *\nFROM   (SELECT owner, object_name, object_type, status, last_ddl_time\n        FROM   dba_objects\n        WHERE  status = 'INVALID'\n        ORDER  BY owner, object_type, object_name)\nWHERE  ROWNUM <= 50;",
+              "params": [],
+              "notes": "只列清单不自动编译；编译用 ALTER ... COMPILE，需先确认对象属主和依赖，生产慎做。"
+            },
+            {
+              "title": "定时任务 / 作业状态",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "dba_scheduler_jobs",
+              "sql": "SELECT owner, job_name, job_type, state, enabled,\n       last_start_date, next_run_date, failure_count\nFROM   dba_scheduler_jobs\nWHERE  owner NOT IN ('SYS', 'SYSTEM')\nORDER  BY owner, job_name;",
+              "params": [],
+              "notes": "state=BROKEN/FAILURE 重点看；查单作业失败明细用 dba_scheduler_job_run_details。"
+            },
+            {
+              "title": "告警日志近24h错误",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "需读alert log / ADRCI",
+              "sql": "-- 1) 先查诊断目录（SQL）：\nSELECT name, value\nFROM   v$diag_info\nWHERE  name IN ('Diag Trace', 'Diag Alert', 'Diag Incident');\n\n-- 2) 再在服务器 OS 用 ADRCI（Shell）：\n-- adrci exec=\"set homepath diag/rdbms/<db_name>/<sid>; show alert -term -tail 200\"\n-- 3) 常见错误直接 grep alert 日志：\n-- grep -E \"ORA-|TNS-\" $ORACLE_BASE/diag/rdbms/<db_name>/<sid>/trace/alert_<sid>.log | tail -n 100",
+              "params": [
+                "<db_name>",
+                "<sid>"
+              ],
+              "notes": "ADRCI 的 homepath 按实际 diag 路径填；alert 日志不在数据库里，SQL 查不到内容，只能查路径。"
+            }
+          ]
+        },
+        {
+          "name": "健康指标",
+          "items": [
+            {
+              "title": "表空间使用率 Top",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": ">85%预警",
+              "sql": "SELECT df.tablespace_name,\n       ROUND(df.total_mb, 2)                         AS total_mb,\n       ROUND(NVL(fs.free_mb, 0), 2)                 AS free_mb,\n       ROUND((df.total_mb - NVL(fs.free_mb, 0)) / df.total_mb * 100, 2) AS pct_used\nFROM   (SELECT tablespace_name, SUM(bytes) / 1024 / 1024 AS total_mb\n        FROM   dba_data_files\n        GROUP  BY tablespace_name) df\n       LEFT JOIN\n       (SELECT tablespace_name, SUM(bytes) / 1024 / 1024 AS free_mb\n        FROM   dba_free_space\n        GROUP  BY tablespace_name) fs\n       ON df.tablespace_name = fs.tablespace_name\nORDER  BY pct_used DESC;",
+              "params": [],
+              "notes": "使用率 >85% 预警，>95% 立即处理；临时表空间不在 dba_data_files 里，见“临时表空间使用”那条。"
+            },
+            {
+              "title": "归档日志生成量 / 切换频率",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$archived_log",
+              "sql": "SELECT TRUNC(first_time) AS day,\n       COUNT(*)             AS arch_count,\n       ROUND(SUM(blocks * block_size) / 1024 / 1024, 2) AS mb_generated\nFROM   v$archived_log\nWHERE  first_time >= SYSDATE - 7\nGROUP  BY TRUNC(first_time)\nORDER  BY day DESC;\n\n-- 日志切换次数（近 7 天，按天）：\nSELECT TRUNC(first_time) AS day, COUNT(*) AS switch_count\nFROM   v$log_history\nWHERE  first_time >= SYSDATE - 7\nGROUP  BY TRUNC(first_time)\nORDER  BY day DESC;",
+              "params": [],
+              "notes": "v$archived_log 只保留控制文件记录的归档，控制文件被覆盖后旧记录会丢；长期趋势以备份/监控为准。"
+            },
+            {
+              "title": "临时表空间使用",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$tempseg_usage",
+              "sql": "SELECT u.username,\n       s.sid,\n       s.serial#,\n       u.tablespace,\n       u.segtype,\n       u.blocks,\n       ROUND(u.blocks * 8192 / 1024 / 1024, 2) AS mb_used\nFROM   v$tempseg_usage u\n       JOIN v$session s ON u.session_addr = s.saddr\nORDER  BY u.blocks DESC;",
+              "params": [],
+              "notes": "块大小按 8K 估算，不同库块大小用 SELECT value FROM v$parameter WHERE name='db_block_size' 核对；无行返回说明当前无人用临时段。"
+            },
+            {
+              "title": "UNDO 使用与保留",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$undostat",
+              "sql": "SELECT tablespace_name, retention\nFROM   dba_tablespaces\nWHERE  contents = 'UNDO';\n\nSELECT TO_CHAR(begin_time, 'YYYY-MM-DD HH24:MI') AS begin_time,\n       undoblks, txncount, maxquerylen, tuned_undoretention\nFROM   v$undostat\nWHERE  begin_time >= SYSDATE - 1\nORDER  BY begin_time DESC;",
+              "params": [],
+              "notes": "tuned_undoretention 是自动调优后的建议保留秒数；ORA-01555 快照过旧先看 maxquerylen 和 UNDO 大小。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "AWR / ASH",
+          "items": [
+            {
+              "title": "生成 AWR 快照 / 报告",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "awrrpt.sql，需Diagnostic Pack授权",
+              "sql": "-- 1) 查已有快照（近 1 天）：\nSELECT snap_id, begin_interval_time, end_interval_time\nFROM   dba_hist_snapshot\nWHERE  begin_interval_time >= SYSDATE - 1\nORDER  BY snap_id DESC;\n\n-- 2) 手动建一个快照（SQL*Plus / PL/SQL）：\n-- EXEC DBMS_WORKLOAD_REPOSITORY.create_snapshot();\n\n-- 3) 生成报告（SQL*Plus，在服务器上执行，选上面查到的起止 snap_id）：\n-- @$ORACLE_HOME/rdbms/admin/awrrpt.sql\n-- 按提示输入：html/text、起止 snap_id、报告文件名",
+              "params": [
+                "<snap_id_start>",
+                "<snap_id_end>"
+              ],
+              "notes": "AWR 需 Diagnostic Pack 授权，无授权不要用 dba_hist_*；create_snapshot 本身是写操作，虽列为只读条目，执行前确认授权。"
+            },
+            {
+              "title": "ASH Top 等待事件",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$active_session_history",
+              "sql": "SELECT *\nFROM   (SELECT event,\n               wait_class,\n               COUNT(*) AS samples,\n               ROUND(COUNT(*) * 100 / SUM(COUNT(*)) OVER (), 2) AS pct\n        FROM   v$active_session_history\n        WHERE  sample_time >= SYSDATE - 1 / 24\n          AND  event IS NOT NULL\n        GROUP  BY event, wait_class\n        ORDER  BY samples DESC)\nWHERE  ROWNUM <= 20;",
+              "params": [],
+              "notes": "v$active_session_history 是 1 秒采样，COUNT(*) 不是精确等待秒数，只能看占比；同样需 Diagnostic Pack 授权。"
+            },
+            {
+              "title": "DB Time / 负载画像",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "AWR Load Profile",
+              "sql": "SELECT stat_name,\n       ROUND(value / 1000000, 2) AS seconds\nFROM   v$sys_time_model\nWHERE  stat_name IN ('DB time', 'DB CPU', 'background cpu time',\n                     'sql execute elapsed time', 'parse time elapsed')\nORDER  BY value DESC;\n\n-- 另查 AWR Load Profile 需 awrrpt.sql 报告里的 Load Profile 一节，本条只给 DB Time 总量。",
+              "params": [],
+              "notes": "DB time 是所有前台会话 CPU+等待之和，可大于挂钟时间；DB time / 挂钟时间 ≈ 平均活跃会话数。"
+            },
+            {
+              "title": "SGA / PGA 使用与建议",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$sga, v$pga_target_advice",
+              "sql": "SELECT name, ROUND(value / 1024 / 1024, 2) AS mb\nFROM   v$sga;\n\nSELECT pga_target_for_estimate / 1024 / 1024 AS pga_target_mb,\n       estd_pga_cache_hit_percentage,\n       estd_overalloc_count\nFROM   v$pga_target_advice\nORDER  BY pga_target_for_estimate;\n\nSELECT name, value\nFROM   v$pgastat\nWHERE  name IN ('total PGA allocated', 'total PGA inuse', 'maximum PGA allocated');",
+              "params": [],
+              "notes": "v$pga_target_advice 只在 PGA_AGGREGATE_TARGET 非 0 时有意义；SGA 改参数要重启或 ALTER SYSTEM，勿直接按建议值改生产。"
+            }
+          ]
+        },
+        {
+          "name": "缓存与统计",
+          "items": [
+            {
+              "title": "Buffer Cache 命中率",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$sysstat",
+              "sql": "SELECT ROUND((1 - (SELECT value FROM v$sysstat WHERE name = 'physical reads')\n                    / NULLIF((SELECT value FROM v$sysstat WHERE name = 'db block gets')\n                             + (SELECT value FROM v$sysstat WHERE name = 'consistent gets'), 0)) * 100, 2) AS buffer_hit_pct\nFROM   dual;\n\nSELECT name, value\nFROM   v$sysstat\nWHERE  name IN ('db block gets', 'consistent gets', 'physical reads', 'physical reads cache')\nORDER  BY name;",
+              "params": [],
+              "notes": "命中率是自启动累计值，重启后清零；单看命中率不够，全表扫描多的库命中率也可能虚高，要结合 Top SQL 看。"
+            },
+            {
+              "title": "Library Cache / 共享池",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$librarycache",
+              "sql": "SELECT namespace, gets, gethits,\n       ROUND(gethits / NULLIF(gets, 0) * 100, 2) AS gethit_pct,\n       pins, pinhits,\n       ROUND(pinhits / NULLIF(pins, 0) * 100, 2) AS pinhit_pct,\n       reloads, invalidations\nFROM   v$librarycache\nORDER  BY namespace;",
+              "params": [],
+              "notes": "reloads/invalidations 持续增长说明硬解析或对象频繁失效；先查共享池和绑定变量，不要直接调大 shared_pool。"
+            },
+            {
+              "title": "表 / 索引统计信息是否过期",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "dba_tab_statistics",
+              "sql": "SELECT *\nFROM   (SELECT owner, table_name, num_rows, last_analyzed, stale_stats\n        FROM   dba_tab_statistics\n        WHERE  stale_stats = 'YES'\n          AND  owner NOT IN ('SYS', 'SYSTEM', 'DBSNMP')\n        ORDER  BY last_analyzed NULLS FIRST)\nWHERE  ROWNUM <= 50;",
+              "params": [],
+              "notes": "stale_stats='YES' 只表示 10% 行变化后未收集，不等于执行计划一定差；先看具体表的慢 SQL 再决定收集。"
+            },
+            {
+              "title": "收集统计信息（DBMS_STATS）",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "生产建议非高峰执行",
+              "sql": "-- 先查（只读确认）：\nSELECT owner, table_name, last_analyzed, stale_stats\nFROM   dba_tab_statistics\nWHERE  owner = '<schema>'\n  AND  table_name = '<table_name>';\n\n-- 再执行（谨慎：建议非高峰、测试库先跑）：\n-- EXEC DBMS_STATS.gather_table_stats(ownname => '<schema>', tabname => '<table_name>', estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE, cascade => TRUE, degree => 4);\n-- 整库模式：\n-- EXEC DBMS_STATS.gather_schema_stats(ownname => '<schema>', estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE, cascade => TRUE, degree => 4);",
+              "params": [
+                "<schema>",
+                "<table_name>"
+              ],
+              "notes": "生产高峰不要全库收集；cascade=>TRUE 会连索引一起收集，degree 按 CPU 核数填，勿填过大。"
+            }
+          ]
+        },
+        {
+          "name": "索引",
+          "items": [
+            {
+              "title": "未使用索引清单",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$object_usage，需先监控",
+              "sql": "SELECT index_name, table_name, monitoring, used,\n       start_monitoring, end_monitoring\nFROM   v$object_usage\nWHERE  used = 'NO'\nORDER  BY table_name, index_name;\n\n-- 开启监控（需先执行，跑一个业务周期后再查上条）：\n-- ALTER INDEX <owner>.<index_name> MONITORING USAGE;",
+              "params": [
+                "<owner>",
+                "<index_name>"
+              ],
+              "notes": "v$object_usage 只有开过 MONITORING USAGE 的索引才有行；没监控过查不到不等于没用，勿直接删索引。"
+            },
+            {
+              "title": "缺失索引建议（SQL Tuning）",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "DBMS_SQLTUNE",
+              "sql": "-- 1) 建调优任务（需 Tuning Pack 授权）：\n-- DECLARE l_task VARCHAR2(30);\n-- BEGIN\n--   l_task := DBMS_SQLTUNE.create_tuning_task(sql_id => '<sql_id>', scope => DBMS_SQLTUNE.scope_comprehensive, time_limit => 600);\n--   DBMS_SQLTUNE.execute_tuning_task(task_name => l_task);\n-- END;\n-- /\n\n-- 2) 查任务状态：\nSELECT task_id, task_name, status, created\nFROM   dba_advisor_tasks\nWHERE  advisor_name = 'SQL Tuning Advisor'\nORDER  BY created DESC;\n\n-- 3) 看报告（把 <task_name> 换成上条查到的）：\n-- SELECT DBMS_SQLTUNE.report_tuning_task('<task_name>') FROM dual;",
+              "params": [
+                "<sql_id>",
+                "<task_name>"
+              ],
+              "notes": "把握一般：DBMS_SQLTUNE 需 Tuning Pack 授权，且 create_tuning_task 的返回值用法在不同版本有细节差异，生产先在测试库跑通再用。"
+            },
+            {
+              "title": "索引碎片 / 重建评估",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "重建前评估锁与空间",
+              "sql": "SELECT *\nFROM   (SELECT owner, index_name, table_name, blevel, leaf_blocks,\n               distinct_keys, clustering_factor,\n               ROUND(leaf_blocks * 8192 / 1024 / 1024, 2) AS leaf_mb\n        FROM   dba_indexes\n        WHERE  owner NOT IN ('SYS', 'SYSTEM')\n        ORDER  BY leaf_blocks DESC)\nWHERE  ROWNUM <= 20;\n\n-- 重建模板（谨慎：先评估，勿直接执行）：\n-- ALTER INDEX <owner>.<index_name> REBUILD ONLINE;",
+              "params": [
+                "<owner>",
+                "<index_name>"
+              ],
+              "notes": "blevel>4 或 leaf_blocks 明显偏大才考虑重建；ONLINE 重建仍需空间和锁评估，碎片不高时重建收益很小。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位慢SQL",
+          "items": [
+            {
+              "title": "Top SQL by Elapsed Time",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$sql / AWR Top SQL",
+              "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               ROUND(elapsed_time / 1000000, 2) AS elapsed_sec,\n               ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n               buffer_gets, disk_reads,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY elapsed_time DESC)\nWHERE  ROWNUM <= 20;",
+              "params": [],
+              "notes": "elapsed_time 单位是微秒；v$sql 是共享池累计值，实例重启后清零，长期 Top 以 AWR 为准。"
+            },
+            {
+              "title": "Top SQL by Buffer Gets",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "逻辑读最高",
+              "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               buffer_gets,\n               ROUND(buffer_gets / NULLIF(executions, 0), 0) AS gets_per_exec,\n               ROUND(elapsed_time / 1000000, 2) AS elapsed_sec,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY buffer_gets DESC)\nWHERE  ROWNUM <= 20;",
+              "params": [],
+              "notes": "逻辑读高不一定是慢 SQL，要结合 avg_sec 和执行次数看；先看 gets_per_exec 再决定是否优化。"
+            },
+            {
+              "title": "Top SQL by Executions",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "执行次数最多",
+              "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n               buffer_gets, disk_reads,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY executions DESC)\nWHERE  ROWNUM <= 20;",
+              "params": [],
+              "notes": "执行次数多、单次不慢的 SQL 也值得优化，累计耗时可能最大；注意 v$sql_text 可能被截断。"
+            },
+            {
+              "title": "近1h 慢SQL（执行>5s）",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$sql + elapsed",
+              "sql": "SELECT sql_id, executions,\n       ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n       ROUND(elapsed_time / 1000000, 2) AS total_sec,\n       buffer_gets,\n       SUBSTR(sql_text, 1, 200) AS sql_text\nFROM   v$sql\nWHERE  last_active_time >= SYSDATE - 1 / 24\n  AND  executions > 0\n  AND  elapsed_time / executions > 5000000\nORDER  BY avg_sec DESC;",
+              "params": [],
+              "notes": "5 秒阈值是 elapsed_time/executions > 5,000,000 微秒；last_active_time 是最后活跃时间，不是首次执行时间。"
+            }
+          ]
+        },
+        {
+          "name": "执行计划",
+          "items": [
+            {
+              "title": "查看执行计划（EXPLAIN PLAN）",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "DBMS_XPLAN",
+              "sql": "-- 模板：把 <你的SQL> 换成要分析的语句（不带分号结尾的分号外写法见下）\nEXPLAIN PLAN FOR\nSELECT * FROM <schema>.<table_name> WHERE <condition>;\n\nSELECT * FROM TABLE(DBMS_XPLAN.display);",
+              "params": [
+                "<schema>",
+                "<table_name>",
+                "<condition>"
+              ],
+              "notes": "EXPLAIN PLAN 是预估计划，不代表真实执行；要真实行数用 DISPLAY_CURSOR 或加 GATHER_PLAN_STATISTICS Hint。"
+            },
+            {
+              "title": "真实执行计划（DBMS_XPLAN.DISPLAY_CURSOR）",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "带A-Rows / Buffers",
+              "sql": "SELECT * FROM TABLE(DBMS_XPLAN.display_cursor('<sql_id>', <child_number>, 'ALLSTATS LAST'));\n\n-- 查该 SQL 的 child_number：\nSELECT sql_id, child_number, executions, plan_hash_value\nFROM   v$sql\nWHERE  sql_id = '<sql_id>'\nORDER  BY child_number;",
+              "params": [
+                "<sql_id>",
+                "<child_number>"
+              ],
+              "notes": "'ALLSTATS LAST' 只有 SQL 带 /*+ GATHER_PLAN_STATISTICS */ 或 statistics_level=ALL 时才有 A-Rows/Buffers，否则只显示预估。"
+            },
+            {
+              "title": "全表扫描 SQL 清单",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "TABLE ACCESS FULL",
+              "sql": "SELECT p.sql_id,\n       COUNT(*) AS full_scan_ops,\n       MAX(s.executions) AS executions,\n       SUBSTR(MAX(s.sql_text), 1, 200) AS sql_text\nFROM   v$sql_plan p\n       JOIN v$sql s ON p.sql_id = s.sql_id AND p.child_number = s.child_number\nWHERE  p.operation = 'TABLE ACCESS'\n  AND  p.options = 'FULL'\nGROUP  BY p.sql_id\nORDER  BY full_scan_ops DESC;",
+              "params": [],
+              "notes": "v$sql_plan 只保留共享池里的计划，重启后丢失；小表全表扫描是正常的，先看表大小和执行次数再优化。"
+            },
+            {
+              "title": "绑定变量窥探 / 直方图检查",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$sql_bind_capture",
+              "sql": "SELECT sql_id, name, position, datatype_string, value_string, last_captured\nFROM   v$sql_bind_capture\nWHERE  sql_id = '<sql_id>'\nORDER  BY position;\n\n-- 直方图（只列有直方图的列）：\nSELECT owner, table_name, column_name, histogram, num_distinct\nFROM   dba_tab_col_statistics\nWHERE  histogram <> 'NONE'\n  AND  owner = '<schema>'\nORDER  BY table_name, column_name;",
+              "params": [
+                "<sql_id>",
+                "<schema>"
+              ],
+              "notes": "v$sql_bind_capture 只保留最近一次捕获的绑定值，不代表每次执行的值；直方图过期会导致绑定窥探失真。"
+            }
+          ]
+        },
+        {
+          "name": "优化手段",
+          "items": [
+            {
+              "title": "SQL Profile / Baseline 建议",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "SQL Tuning Advisor",
+              "sql": "-- 1) 先跑调优任务并看报告（见“缺失索引建议”那条，任务名换成实际值）：\n-- SELECT DBMS_SQLTUNE.report_tuning_task('<task_name>') FROM dual;\n\n-- 2) 查已有 Profile / Baseline：\nSELECT name, type, status, created\nFROM   dba_sql_profiles\nORDER  BY created DESC;\n\nSELECT sql_handle, plan_name, enabled, accepted, origin\nFROM   dba_sql_plan_baselines\nORDER  BY created DESC;\n\n-- 3) 接受 Profile 模板（谨慎：先在测试库验证）：\n-- EXEC DBMS_SQLTUNE.accept_sql_profile(task_name => '<task_name>', name => '<profile_name>');",
+              "params": [
+                "<task_name>",
+                "<profile_name>"
+              ],
+              "notes": "接受 Profile 会改变执行计划，生产先在测试库验证；Baseline 需先用 DBMS_SPM.load_plans_from_cursor_cache 加载。"
+            },
+            {
+              "title": "自动索引建议（19c+）",
+              "versions": "19c+",
+              "risk": "谨慎",
+              "desc": "DBMS_AUTO_INDEX",
+              "sql": "-- 查自动索引配置：\nSELECT parameter_name, parameter_value\nFROM   dba_auto_index_config\nORDER  BY parameter_name;\n\n-- 查已自动创建的索引：\nSELECT index_name, table_owner, table_name, auto\nFROM   dba_indexes\nWHERE  auto = 'YES'\nORDER  BY table_name;\n\n-- 查最近自动索引活动报告：\n-- SELECT DBMS_AUTO_INDEX.report_last_activity() FROM dual;",
+              "params": [],
+              "notes": "把握一般：DBA_AUTO_INDEX_CONFIG 的列名/参数名在 19c 各补丁间有细节差异，且自动索引默认不开启；本条先以查询为准，开启前务必在测试库核对视图定义。"
+            },
+            {
+              "title": "Hint 改写模板",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "/*+ INDEX / PARALLEL */ 仅模板",
+              "sql": "-- 模板（谨慎：Hint 只在确认执行计划走偏时用，先在测试库对比前后计划）：\n-- SELECT /*+ INDEX(t <index_name>) */ * FROM <schema>.<table_name> t WHERE <condition>;\n-- SELECT /*+ PARALLEL(t, 4) */ * FROM <schema>.<table_name> t WHERE <condition>;\n-- SELECT /*+ LEADING(a b) USE_HASH(b) */ * FROM <schema>.<table_a> a, <schema>.<table_b> b WHERE a.id = b.id;\n\n-- 查当前带 Hint 的 SQL（前 20）：\nSELECT sql_id, SUBSTR(sql_text, 1, 200) AS sql_text\nFROM   v$sql\nWHERE  sql_text LIKE '%/*+%'\n  AND  ROWNUM <= 20;",
+              "params": [
+                "<schema>",
+                "<table_name>",
+                "<index_name>",
+                "<condition>"
+              ],
+              "notes": "Hint 写错表别名/索引名会被优化器静默忽略；改完务必用 DISPLAY_CURSOR 确认计划真的变了。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "锁 / 会话 / 等待",
+      "subcategories": [
+        {
+          "name": "锁与阻塞",
+          "items": [
+            {
+              "title": "当前阻塞锁链",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$lock + v$session blocking",
+              "sql": "SELECT sid, serial#, username, machine, program, status,\n       blocking_session, blocking_session_serial#,\n       event, sql_id,\n       ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\nFROM   v$session\nWHERE  blocking_session IS NOT NULL\n   OR  sid IN (SELECT blocking_session FROM v$session WHERE blocking_session IS NOT NULL)\nORDER  BY blocking_session NULLS FIRST, sid;\n\n-- 锁详情（v$lock）：\nSELECT l.sid, l.type, l.lmode, l.request, l.block, s.username\nFROM   v$lock l\n       JOIN v$session s ON l.sid = s.sid\nWHERE  l.block = 1 OR l.request > 0\nORDER  BY l.sid;",
+              "params": [],
+              "notes": "blocking_session 为空不代表没锁，可能是行锁在等 TX；先找根阻塞者（blocking_session 为空的那行），不要先杀等待者。"
+            },
+            {
+              "title": "死锁历史（ORA-00060）",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "alert log / trace",
+              "sql": "-- 1) 查诊断目录（SQL）：\nSELECT name, value\nFROM   v$diag_info\nWHERE  name IN ('Diag Trace', 'Diag Alert');\n\n-- 2) 在服务器 OS 上 grep alert 日志（Shell）：\n-- grep -i \"ORA-00060\" $ORACLE_BASE/diag/rdbms/<db_name>/<sid>/trace/alert_<sid>.log | tail -n 20\n-- 3) 找到死锁 trace 文件名（alert 日志里 Deadlock graph 一节会给 trace 文件路径，再用 vi / less 打开看）",
+              "params": [
+                "<db_name>",
+                "<sid>"
+              ],
+              "notes": "死锁信息不在 v$ 视图里，只能看 alert 日志和 trace 文件；本条 SQL 只能定位日志路径，不能直接查出死锁 SQL。"
+            },
+            {
+              "title": "行锁等待详情",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$session + row_wait",
+              "sql": "SELECT s.sid, s.serial#, s.username, s.event, s.seconds_in_wait,\n       s.row_wait_obj#, s.row_wait_file#, s.row_wait_block#, s.row_wait_row#,\n       o.object_name, o.object_type\nFROM   v$session s\n       LEFT JOIN dba_objects o ON o.object_id = s.row_wait_obj#\nWHERE  s.event LIKE 'enq: TX%'\n   OR  s.wait_class = 'Application'\nORDER  BY s.seconds_in_wait DESC;",
+              "params": [],
+              "notes": "row_wait_* 只在会话正在等行锁时有值，锁释放后就没了；要定位行内容需按 file#/block#/row# 再查表，生产慎做。"
+            },
+            {
+              "title": "杀会话（ALTER SYSTEM KILL）",
+              "versions": "11g+",
+              "risk": "危险",
+              "desc": "先确认业务影响",
+              "sql": "-- 第 1 步：先确认要杀的会话（只读）：\nSELECT sid, serial#, username, machine, program, status, sql_id, event\nFROM   v$session\nWHERE  sid = <sid>\n  AND  serial# = <serial#>;\n\n-- 第 2 步：确认无误后再执行（DANGER：会中断业务会话，RAC 需加 @inst_id）：\n-- ALTER SYSTEM KILL SESSION '<sid>,<serial#>' IMMEDIATE;\n-- RAC 写法：\n-- ALTER SYSTEM KILL SESSION '<sid>,<serial#>,@<inst_id>' IMMEDIATE;",
+              "params": [
+                "<sid>",
+                "<serial#>",
+                "<inst_id>"
+              ],
+              "notes": "DANGER：先确认 sid+serial# 对应的是目标会话而非后台进程；KILL 后会话可能要等 PMON 清理回滚，勿重复 KILL。"
+            }
+          ]
+        },
+        {
+          "name": "会话与等待",
+          "items": [
+            {
+              "title": "活跃会话 Top",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$session status=ACTIVE",
+              "sql": "SELECT *\nFROM   (SELECT sid, serial#, username, machine, program, status,\n               event, sql_id,\n               ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\n        FROM   v$session\n        WHERE  status = 'ACTIVE'\n          AND  type = 'USER'\n        ORDER  BY logon_time)\nWHERE  ROWNUM <= 20;",
+              "params": [],
+              "notes": "ACTIVE 只表示此刻在跑 SQL，不等于长耗时；结合 sql_id 和 event 看，不要只按 logon_time 排序就杀。"
+            },
+            {
+              "title": "等待事件 Top 10",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$system_event",
+              "sql": "SELECT *\nFROM   (SELECT event, total_waits,\n               ROUND(time_waited / 100, 2) AS waited_sec,\n               ROUND(time_waited_micro / 1000000, 2) AS waited_sec_micro,\n               total_timeouts\n        FROM   v$system_event\n        WHERE  event NOT LIKE 'SQL*Net%'\n          AND  event NOT LIKE 'rdbms ipc%'\n        ORDER  BY time_waited DESC)\nWHERE  ROWNUM <= 10;",
+              "params": [],
+              "notes": "time_waited 单位是百分之一秒，time_waited_micro 是微秒，两者不要混用；idle 类事件已过滤，仍需结合 ASH 看。"
+            },
+            {
+              "title": "长运行会话（>30min）",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$session + sql",
+              "sql": "SELECT sid, serial#, username, sql_id, event,\n       last_call_et,\n       ROUND(last_call_et / 60, 1) AS mins_running,\n       ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\nFROM   v$session\nWHERE  status = 'ACTIVE'\n  AND  type = 'USER'\n  AND  last_call_et > 1800\nORDER  BY last_call_et DESC;",
+              "params": [],
+              "notes": "last_call_et 是当前调用已持续秒数，不是整个会话时长；>1800 秒即 30 分钟，勿把空闲会话（last_call_et 大但 status=INACTIVE）算进来。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间 / 存储",
+      "subcategories": [
+        {
+          "name": "表空间",
+          "items": [
+            {
+              "title": "表空间扩容（ADD DATAFILE）",
+              "versions": "11g+",
+              "risk": "危险",
+              "desc": "先查磁盘余量",
+              "sql": "-- 第 1 步：先查表空间和磁盘（只读）：\nSELECT tablespace_name, file_name,\n       ROUND(bytes / 1024 / 1024, 2) AS mb,\n       autoextensible,\n       ROUND(maxbytes / 1024 / 1024, 2) AS max_mb\nFROM   dba_data_files\nWHERE  tablespace_name = '<tablespace_name>'\nORDER  BY file_id;\n\n-- 第 2 步：确认磁盘余量（Shell：df -h <datafile_dir>），确认后再执行（DANGER）：\n-- ALTER TABLESPACE <tablespace_name> ADD DATAFILE '<datafile_path>' SIZE 1G AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED;",
+              "params": [
+                "<tablespace_name>",
+                "<datafile_path>",
+                "<datafile_dir>"
+              ],
+              "notes": "DANGER：先确认磁盘余量和文件路径权限；SIZE/MAXSIZE 按实际剩余空间填，不要照抄 1G/UNLIMITED。"
+            },
+            {
+              "title": "数据文件 / 自动扩展状态",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "dba_data_files",
+              "sql": "SELECT tablespace_name, file_name,\n       ROUND(bytes / 1024 / 1024, 2) AS mb,\n       ROUND(maxbytes / 1024 / 1024, 2) AS max_mb,\n       autoextensible, increment_by\nFROM   dba_data_files\nORDER  BY tablespace_name, file_id;",
+              "params": [],
+              "notes": "maxbytes=0 表示未设上限或不可扩展，要结合 autoextensible 看；increment_by 单位是块，不是 MB。"
+            },
+            {
+              "title": "段增长 Top 20",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "dba_segments",
+              "sql": "SELECT *\nFROM   (SELECT owner, segment_name, segment_type, tablespace_name,\n               ROUND(bytes / 1024 / 1024, 2) AS mb\n        FROM   dba_segments\n        ORDER  BY bytes DESC)\nWHERE  ROWNUM <= 20;",
+              "params": [],
+              "notes": "dba_segments 是当前大小，不是增长量；要增长趋势需定期快照对比，或查 dba_hist_seg_stat（需 Diagnostic Pack）。"
+            },
+            {
+              "title": "大表 / 大索引清单",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "按MB排序",
+              "sql": "SELECT *\nFROM   (SELECT owner, segment_name, segment_type, tablespace_name,\n               ROUND(bytes / 1024 / 1024, 2) AS mb\n        FROM   dba_segments\n        WHERE  segment_type IN ('TABLE', 'INDEX')\n        ORDER  BY bytes DESC)\nWHERE  ROWNUM <= 20;",
+              "params": [],
+              "notes": "只按段大小排，分区表会拆成多个段；要整表大小需按 segment_name 去掉分区后缀汇总。"
+            },
+            {
+              "title": "回收站清理（PURGE）",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "DROP 后恢复会失效",
+              "sql": "SELECT owner, object_name, original_name, type, ts_name, droptime,\n       ROUND(space * 8192 / 1024 / 1024, 2) AS mb\nFROM   dba_recyclebin\nORDER  BY droptime DESC;\n\n-- 清理模板（谨慎：PURGE 后无法 FLASHBACK 恢复）：\n-- PURGE TABLE <owner>.<object_name>;\n-- PURGE RECYCLEBIN;",
+              "params": [
+                "<owner>",
+                "<object_name>"
+              ],
+              "notes": "PURGE 后 DROP 的表无法再闪回恢复；先确认 droptime 和 original_name 是要删的表，再执行。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "RMAN",
+          "items": [
+            {
+              "title": "RMAN 全量备份命令",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "BACKUP DATABASE PLUS ARCHIVELOG",
+              "sql": "-- RMAN 命令（在 RMAN 提示符或 rman target / @脚本 里执行）：\nRUN {\n  ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '<backup_dir>/%d_%T_%U.bak';\n  BACKUP DATABASE PLUS ARCHIVELOG;\n  DELETE NOPROMPT OBSOLETE;\n  RELEASE CHANNEL c1;\n}",
+              "params": [
+                "<backup_dir>"
+              ],
+              "notes": "PLUS ARCHIVELOG 会先切归档再备份；DELETE OBSOLETE 按保留策略删旧备份，执行前先 SHOW RETENTION POLICY 确认。"
+            },
+            {
+              "title": "RMAN 增量 0/1 级备份",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "Level 0/1 + 归档",
+              "sql": "-- 0 级（全量基准，含归档）：\nRUN {\n  ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '<backup_dir>/%d_%T_L0_%U.bak';\n  BACKUP INCREMENTAL LEVEL 0 DATABASE PLUS ARCHIVELOG;\n  RELEASE CHANNEL c1;\n}\n\n-- 1 级（差异增量，日常跑）：\n-- RUN {\n--   ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '<backup_dir>/%d_%T_L1_%U.bak';\n--   BACKUP INCREMENTAL LEVEL 1 DATABASE PLUS ARCHIVELOG;\n--   RELEASE CHANNEL c1;\n-- }",
+              "params": [
+                "<backup_dir>"
+              ],
+              "notes": "0 级是 1 级的基准，1 级恢复要依赖最近的 0 级；先做 0 级再做 1 级，不要只跑 1 级。"
+            },
+            {
+              "title": "RMAN 备份集 / 保留策略检查",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "LIST BACKUP / REPORT",
+              "sql": "-- RMAN 命令（只读检查）：\n-- LIST BACKUP SUMMARY;\n-- LIST BACKUP OF DATABASE SUMMARY;\n-- SHOW RETENTION POLICY;\n-- SHOW ALL;\n-- REPORT OBSOLETE;\n-- REPORT NEED BACKUP;",
+              "params": [],
+              "notes": "LIST/REPORT 是 RMAN 命令不是 SQL，在 SQL*Plus 里跑不了；REPORT OBSOLETE 只报告不删除，删除用 DELETE OBSOLETE。"
+            },
+            {
+              "title": "RMAN 恢复演练清单",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "测试库演练，勿在生产直接跑",
+              "sql": "-- 演练清单（只在测试库/演练环境执行，勿在生产直接跑）：\n-- 1. LIST BACKUP SUMMARY;              -- 确认最近一次全备+归档都在\n-- 2. SHOW RETENTION POLICY;            -- 确认保留策略\n-- 3. RESTORE DATABASE PREVIEW;         -- 预演恢复，不真正写文件\n-- 4. VALIDATE DATABASE;                -- 校验备份可读\n-- 5. RESTORE DATABASE; RECOVER DATABASE; ALTER DATABASE OPEN RESETLOGS;\n--    -- 第 5 步只在演练库执行，生产恢复按实际故障场景走，勿照抄 RESETLOGS",
+              "params": [],
+              "notes": "把握一般：本条是演练清单不是单条可执行 SQL，RESTORE/RECOVER 的具体语法随场景（全库/表空间/时间点）而变，演练前先做全备。"
+            }
+          ]
+        },
+        {
+          "name": "闪回与 PITR",
+          "items": [
+            {
+              "title": "闪回查询（AS OF TIMESTAMP）",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "需UNDO保留",
+              "sql": "-- 查 1 小时前的数据（模板）：\nSELECT * FROM <schema>.<table_name> AS OF TIMESTAMP (SYSDATE - 1 / 24) WHERE ROWNUM <= 20;\n\n-- 先确认 UNDO 能保留多久（只读）：\nSELECT TO_CHAR(begin_time, 'YYYY-MM-DD HH24:MI') AS begin_time,\n       tuned_undoretention, maxquerylen\nFROM   v$undostat\nWHERE  begin_time >= SYSDATE - 1\nORDER  BY begin_time DESC;",
+              "params": [
+                "<schema>",
+                "<table_name>"
+              ],
+              "notes": "超过 UNDO 保留期会报 ORA-01555；闪回查询只能读，不能直接 UPDATE 回去，要恢复需 INSERT SELECT。"
+            },
+            {
+              "title": "闪回表（FLASHBACK TABLE）",
+              "versions": "11g+",
+              "risk": "危险",
+              "desc": "需行移动开启",
+              "sql": "-- 第 1 步：先确认行移动是否开启（只读）：\nSELECT owner, table_name, row_movement\nFROM   dba_tables\nWHERE  owner = '<schema>'\n  AND  table_name = '<table_name>';\n\n-- 第 2 步：确认后再执行（DANGER：会回退整表到指定时间点）：\n-- ALTER TABLE <schema>.<table_name> ENABLE ROW MOVEMENT;\n-- FLASHBACK TABLE <schema>.<table_name> TO TIMESTAMP TO_TIMESTAMP('<yyyy-mm-dd hh24:mi:ss>', 'YYYY-MM-DD HH24:MI:SS');",
+              "params": [
+                "<schema>",
+                "<table_name>",
+                "<yyyy-mm-dd hh24:mi:ss>"
+              ],
+              "notes": "DANGER：需先 ENABLE ROW MOVEMENT；闪回表会回退该时间点之后的所有 DML，执行前先闪回查询确认数据。"
+            },
+            {
+              "title": "RMAN 表级 PITR",
+              "versions": "12c+",
+              "risk": "危险",
+              "desc": "12c+支持，4-12h",
+              "sql": "-- 12c+ 才支持 RECOVER TABLE，先确认版本和备份（只读）：\n-- SELECT * FROM v$version;\n-- LIST BACKUP OF TABLE <schema>.<table_name>;\n\n-- 恢复模板（DANGER：只在演练/恢复场景执行，12c+）：\n-- RECOVER TABLE <schema>.<table_name>\n--   UNTIL TIME \"TO_DATE('<yyyy-mm-dd hh24:mi:ss>', 'YYYY-MM-DD HH24:MI:SS')\"\n--   AUXILIARY DESTINATION '<aux_dir>';",
+              "params": [
+                "<schema>",
+                "<table_name>",
+                "<yyyy-mm-dd hh24:mi:ss>",
+                "<aux_dir>"
+              ],
+              "notes": "仅 12c+ 支持，11g 跑会报错；AUXILIARY DESTINATION 需有足够空间放辅助实例，恢复耗时按表大小估算。"
+            },
+            {
+              "title": "块损坏 BMR 恢复",
+              "versions": "11g+",
+              "risk": "危险",
+              "desc": "BLOCKRECOVER",
+              "sql": "-- 第 1 步：先查坏块（只读）：\nSELECT file#, block#, blocks, corruption_type\nFROM   v$database_block_corruption\nORDER  BY file#, block#;\n\n-- 第 2 步：校验备份（RMAN）：\n-- VALIDATE DATABASE;\n\n-- 第 3 步：块恢复模板（DANGER：需有备份，确认 file#/block# 后再执行）：\n-- BLOCKRECOVER DATAFILE <file#> BLOCK <block#>;",
+              "params": [
+                "<file#>",
+                "<block#>"
+              ],
+              "notes": "DANGER：v$database_block_corruption 为空不代表没坏块，要 VALIDATE 才准；BLOCKRECOVER 需 RMAN 备份，没有备份无法恢复。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用 / 容灾",
+      "subcategories": [
+        {
+          "name": "RAC",
+          "items": [
+            {
+              "title": "RAC 节点 / 实例状态",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "srvctl / crsctl",
+              "sql": "-- SQL（gv$instance，各节点一行）：\nSELECT inst_id, instance_name, host_name, version, status, startup_time\nFROM   gv$instance\nORDER  BY inst_id;\n\n-- Shell（服务器上执行）：\n-- crsctl check cluster -all\n-- srvctl status database -d <db_name>\n-- srvctl status instance -d <db_name> -i <inst_name>",
+              "params": [
+                "<db_name>",
+                "<inst_name>"
+              ],
+              "notes": "gv$instance 需 RAC 环境，单机跑只有一行；crsctl/srvctl 需 grid 用户权限。"
+            },
+            {
+              "title": "RAC 互联 / 心跳检查",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "oifcfg / 集群日志",
+              "sql": "SELECT inst_id, name, ip_address, is_public, source\nFROM   gv$cluster_interconnects\nORDER  BY inst_id;\n\n-- Shell（服务器上执行）：\n-- oifcfg getif\n-- crsctl check cssd\n-- crsctl stat res -t",
+              "params": [],
+              "notes": "互联（private）丢包会触发节点驱逐；is_public='NO' 的才是互联，勿把公网 IP 当互联。"
+            },
+            {
+              "title": "服务切换 / 负载均衡检查",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "srvctl config service",
+              "sql": "SELECT name, network_name, failover_method, failover_type, failover_retries\nFROM   dba_services\nORDER  BY name;\n\n-- Shell（服务器上执行）：\n-- srvctl config service -d <db_name>\n-- srvctl status service -d <db_name>",
+              "params": [
+                "<db_name>"
+              ],
+              "notes": "dba_services 看的是数据库内服务定义，实际运行状态以 srvctl status 为准；改服务要 srvctl modify，不要直接改表。"
+            }
+          ]
+        },
+        {
+          "name": "DG / OGG",
+          "items": [
+            {
+              "title": "DG 备库延迟（Apply Lag）",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "v$dataguard_stats",
+              "sql": "SELECT name, value, time_computed, datum_time\nFROM   v$dataguard_stats;\n\nSELECT database_role, protection_mode, switchover_status, open_mode\nFROM   v$database;",
+              "params": [],
+              "notes": "apply lag 和 transport lag 是两个值，v$dataguard_stats 里分开列；备库查要在备库上执行，主库查不到备库延迟。"
+            },
+            {
+              "title": "DG 切换演练（Switchover）",
+              "versions": "11g+",
+              "risk": "危险",
+              "desc": "演练前停写确认",
+              "sql": "-- 第 1 步：先确认可切换（只读，主备都查）：\nSELECT database_role, switchover_status, open_mode\nFROM   v$database;\n\n-- 第 2 步：确认 switchover_status=TO STANDBY / TO PRIMARY 后再执行（DANGER：会切主备角色）：\n-- 主库执行：ALTER DATABASE COMMIT TO SWITCHOVER TO PHYSICAL STANDBY;\n-- 备库执行：ALTER DATABASE COMMIT TO SWITCHOVER TO PRIMARY;\n-- 然后两边分别 SHUTDOWN / STARTUP，按实际演练手册走",
+              "params": [],
+              "notes": "DANGER：演练前必须停写确认，switchover_status 不是 TO STANDBY/TO PRIMARY 时不要强行切；RAC 切换步骤与单机不同。"
+            },
+            {
+              "title": "OGG 抽取 / 投递延迟",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "INFO ALL / lag",
+              "sql": "-- GGSCI 命令（在 OGG 安装目录执行 ./ggsci，非 SQL）：\n-- INFO ALL\n-- INFO EXTRACT <extract_name>\n-- INFO REPLICAT <replicat_name>\n-- LAG EXTRACT <extract_name>\n-- LAG REPLICAT <replicat_name>\n-- INFO EXTRACT <extract_name>, DETAIL",
+              "params": [
+                "<extract_name>",
+                "<replicat_name>"
+              ],
+              "notes": "把握一般：OGG 不是数据库内置功能，命令在 GGSCI 里执行，LAG 数值单位和版本有关；先确认 OGG 版本和进程名再查。"
+            },
+            {
+              "title": "容灾 RPO=0 演练清单",
+              "versions": "11g+",
+              "risk": "谨慎",
+              "desc": "按你的银行案例沉淀",
+              "sql": "-- 演练前只读检查：\nSELECT database_role, protection_mode, switchover_status FROM v$database;\nSELECT name, value FROM v$dataguard_stats;\n-- LIST BACKUP SUMMARY;  -- RMAN，确认最近全备\n-- 演练清单（只在演练环境执行）：\n-- 1. 确认 DG apply lag = 0、归档无缺口（v$archived_log gap 检查）\n-- 2. 确认 RMAN 最近全备+归档可恢复（VALIDATE DATABASE）\n-- 3. 按演练手册做 Switchover / Failover，记录切换耗时\n-- 4. 切回后确认主备角色、应用连接、数据一致性抽查",
+              "params": [],
+              "notes": "把握一般：本条是演练清单，RPO=0 依赖同步模式（MAXIMUM PROTECTION/AVAILABILITY）+网络，清单本身不保证 RPO=0，演练前先核对保护模式。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "用户 / 权限 / 安全",
+      "subcategories": [
+        {
+          "name": "账号",
+          "items": [
+            {
+              "title": "用户 / 角色 / 权限清单",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "dba_users / dba_role_privs",
+              "sql": "SELECT username, account_status, default_tablespace, temporary_tablespace, profile, created\nFROM   dba_users\nORDER  BY username;\n\nSELECT grantee, granted_role, admin_option\nFROM   dba_role_privs\nWHERE  grantee = '<username>'\nORDER  BY granted_role;\n\nSELECT grantee, privilege, admin_option\nFROM   dba_sys_privs\nWHERE  grantee = '<username>'\nORDER  BY privilege;",
+              "params": [
+                "<username>"
+              ],
+              "notes": "dba_users/dba_role_privs/dba_sys_privs 均需 DBA 权限；查单个用户时把 <username> 换成大写用户名。"
+            },
+            {
+              "title": "密码过期 / 锁定账号",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "dba_users account_status",
+              "sql": "SELECT username, account_status, lock_date, expiry_date, profile\nFROM   dba_users\nWHERE  account_status <> 'OPEN'\nORDER  BY username;\n\n-- 即将过期（30 天内）：\nSELECT username, account_status, expiry_date\nFROM   dba_users\nWHERE  expiry_date IS NOT NULL\n  AND  expiry_date < SYSDATE + 30\nORDER  BY expiry_date;",
+              "params": [],
+              "notes": "account_status 含 EXPIRED(GRACE) 等多种状态，不等于锁定；解锁用 ALTER USER ... ACCOUNT UNLOCK，属谨慎操作勿批量执行。"
+            },
+            {
+              "title": "审计开启与审计日志",
+              "versions": "11g+",
+              "risk": "只读",
+              "desc": "11g审计 / 12c+统一审计",
+              "sql": "-- 1) 查审计开关（SQL*Plus）：\n-- SHOW PARAMETER audit_trail;\n\n-- 2) 11g 传统审计日志（近 1 天，前 50）：\nSELECT username, action_name, timestamp, obj_name, returncode\nFROM   dba_audit_trail\nWHERE  timestamp >= SYSDATE - 1\n  AND  ROWNUM <= 50\nORDER  BY timestamp DESC;\n\n-- 3) 12c+ 统一审计（仅 12c+，11g 跑会报 ORA-00942）：\n-- SELECT dbusername, action_name, event_timestamp, object_name, return_code\n-- FROM   unified_audit_trail\n-- WHERE  event_timestamp >= SYSDATE - 1\n--   AND  ROWNUM <= 50\n-- ORDER  BY event_timestamp DESC;",
+              "params": [],
+              "notes": "11g 用 dba_audit_trail，12c+ 推荐 unified_audit_trail；SHOW PARAMETER 是 SQL*Plus 命令，在 JDBC 里跑不了。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

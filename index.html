@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DBA SQL 工具</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#16181d;color:#e6e8eb;font-size:14px}
+  header{padding:12px 16px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  h1{font-size:15px;margin:0 8px 0 0} .sub{color:#8b9096;font-size:12px}
+  .tabs{display:flex;gap:6px;padding:10px 16px 0;flex-wrap:wrap}
+  .tab{padding:6px 12px;border:1px solid #2c3038;border-radius:999px;background:#1e2126;color:#c9cdd3;cursor:pointer}
+  .tab.active{background:#2563eb;border-color:#2563eb;color:#fff}
+  .row{display:flex;gap:8px;padding:12px 16px;flex-wrap:wrap;align-items:center}
+  select,input[type=checkbox]{accent-color:#2563eb}
+  select{background:#1e2126;color:#e6e8eb;border:1px solid #2c3038;border-radius:6px;padding:6px 8px}
+  label{color:#aab0b8;font-size:13px;display:flex;gap:4px;align-items:center}
+  textarea{width:calc(100% - 32px);margin:0 16px;height:150px;background:#0f1114;color:#e6e8eb;border:1px solid #2c3038;border-radius:8px;padding:10px;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.6;resize:vertical}
+  .btns{display:flex;gap:8px;padding:12px 16px;flex-wrap:wrap}
+  button{padding:8px 14px;border-radius:8px;border:1px solid #2c3038;background:#2563eb;color:#fff;cursor:pointer;font-size:13px}
+  button.ghost{background:#1e2126;color:#e6e8eb}
+  pre{margin:0 16px 12px;min-height:120px;max-height:300px;overflow:auto;background:#0f1114;border:1px solid #2c3038;border-radius:8px;padding:12px;font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-all}
+  .warn{margin:0 16px 14px;color:#f5b544;font-size:12px;line-height:1.6;white-space:pre-wrap}
+  .hint{margin:0 16px 14px;color:#8b9096;font-size:12px;line-height:1.6}
+  .ok{color:#4ade80}
+</style>
+</head>
+<body>
+<header><h1>🛢️ DBA SQL 工具</h1><span class="sub">v0.1 · 本地运行，不联网 · Oracle / MySQL 优先</span></header>
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="format">格式化</div>
+  <div class="tab" data-tab="convert">方言互转</div>
+  <div class="tab" data-tab="desens">脱敏</div>
+  <div class="tab" data-tab="listin">列表转 IN</div>
+  <div class="tab" data-tab="ts">时间戳</div>
+</div>
+
+<div class="row">
+  <label>方言 <select id="dialect"><option value="oracle">Oracle</option><option value="mysql">MySQL</option><option value="postgres">PostgreSQL</option><option value="sqlserver">SQL Server</option></select></label>
+  <label>缩进 <select id="indent"><option value="2">2 空格</option><option value="4">4 空格</option></select></label>
+  <label><input type="checkbox" id="upper" checked> 关键字大写</label>
+  <label id="convertRow" style="display:none">转到 <select id="targetDialect"><option value="mysql">MySQL</option><option value="oracle">Oracle</option></select></label>
+</div>
+
+<textarea id="input" placeholder="粘贴 SQL / 列表 / 时间戳到这里…&#10;示例：select a,b from t where id=1 and name='x' order by a"></textarea>
+
+<div class="btns">
+  <button id="run">▶ 运行</button>
+  <button class="ghost" id="compress">压缩成一行</button>
+  <button class="ghost" id="copy">复制结果</button>
+  <button class="ghost" id="sample">填示例</button>
+  <button class="ghost" id="clear">清空</button>
+</div>
+
+<pre id="output">结果会显示在这里</pre>
+<div class="warn" id="warn"></div>
+<div class="hint" id="hint">用法：Alt+空格 输入「SQL格式化」打开；或选中 SQL 后鼠标中键呼出超级面板选「格式化这段 SQL」；也可以直接把 SQL 粘贴进 uTools 输入框匹配。</div>
+
+<script src="./lib/sql-core.js"></script>
+<script>
+(function(){
+  var core = window.sqlCore || (window.services || {});
+  var tab='format', $=function(id){return document.getElementById(id)};
+  function svc(name){ return (window.services && window.services[name]) || (window.sqlCore && window.sqlCore[name]); }
+  function getInput(){ return $('input').value; }
+  function setOut(t, w){
+    $('output').textContent = t || '(无结果)';
+    $('warn').textContent = w || '';
+  }
+  function run(){
+    var inp=getInput(), out='', warns=[];
+    try{
+      if(tab==='format'){
+        out = svc('formatSql')(inp,{dialect:$('dialect').value, indent:+$('indent').value, uppercaseKeywords:$('upper').checked});
+      } else if(tab==='convert'){
+        var r = svc('convertDialect')(inp, $('dialect').value, $('targetDialect').value);
+        out = r.sql; warns = r.warnings||[];
+      } else if(tab==='desens'){
+        out = svc('desensitizeSql')(inp);
+        warns=['字符串已替换为 ***，数字已替换为 ?，发给别人 / 贴工单前请再看一眼'];
+      } else if(tab==='listin'){
+        var li = svc('listToIn')(inp,{});
+        out = li.sql; if(li.warning) warns=[li.warning];
+        if(li.count) $('hint').textContent = '共 '+li.count+' 个，去重后';
+      } else if(tab==='ts'){
+        var ts = svc('timestampConvert')(inp);
+        out = ts.out || ts.hint; if(ts.hint) warns=[ts.hint];
+      }
+    }catch(e){ out='出错：'+e.message; }
+    setOut(out, warns.join('\n'));
+  }
+  document.querySelectorAll('.tab').forEach(function(el){
+    el.onclick=function(){
+      document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')});
+      el.classList.add('active'); tab=el.dataset.tab;
+      $('convertRow').style.display = tab==='convert' ? 'flex':'none';
+      $('hint').textContent = tab==='convert' ? 'v0.1 只做 Oracle <-> MySQL 规则互转，不是完整转译，上线前务必在测试库跑一遍。'
+        : tab==='desens' ? '脱敏：字符串 → ***，数字 → ?，适合贴慢日志 / 执行计划求助。'
+        : tab==='listin' ? '每行一个值，或逗号分隔。Oracle IN 超过 1000 个会报 ORA-01795。'
+        : tab==='ts' ? '支持 10 位秒 / 13 位毫秒时间戳，或 YYYY-MM-DD HH:mm:ss 互转。'
+        : '用法：Alt+空格 输入「SQL格式化」打开；或选中 SQL 后鼠标中键呼出超级面板选「格式化这段 SQL」。';
+      run();
+    };
+  });
+  $('run').onclick=run;
+  $('compress').onclick=function(){ var c=svc('compressSql')(getInput()); setOut(c,''); };
+  $('copy').onclick=function(){
+    var t=$('output').textContent;
+    if(window.services && window.services.copyText) window.services.copyText(t);
+    else if(navigator.clipboard) navigator.clipboard.writeText(t);
+    $('copy').textContent='已复制 ✓'; setTimeout(function(){$('copy').textContent='复制结果'},1200);
+  };
+  $('sample').onclick=function(){
+    if(tab==='listin'){ $('input').value="1001\n1002\n1003\n张三\n李四"; }
+    else if(tab==='ts'){ $('input').value="1732521600"; }
+    else if(tab==='convert'){ $('input').value="SELECT NVL(name,'未知'), TO_CHAR(created_at,'YYYY-MM-DD') FROM users WHERE ROWNUM <= 10"; $('dialect').value='oracle'; $('targetDialect').value='mysql'; }
+    else if(tab==='desens'){ $('input').value="select * from users where phone='13800138000' and age=30"; }
+    else { $('input').value="select a,b,count(*) c from t where id=1 and name='x' group by a,b order by c desc"; }
+    run();
+  };
+  $('clear').onclick=function(){ $('input').value=''; setOut('',''); };
+  $('input').addEventListener('input', function(){ if(getInput().trim().length>3) run(); });
+
+  // uTools enter payload: regex / files mode passes selected text or file path
+  setTimeout(function(){
+    try{
+      var p = window.__UTOOLS_ENTER_PAYLOAD__;
+      if(!p && window.services && window.services.getEnterAction){
+        var a = window.services.getEnterAction(); if(a) p = a.payload;
+      }
+      if(typeof p === 'string' && p.trim()){
+        $('input').value = p; run();
+      } else if(Array.isArray(p) && p.length && p[0].path && window.services && window.services.readTextFile){
+        var txt = window.services.readTextFile(p[0].path);
+        if(txt){ $('input').value = txt; run(); }
+      }
+    }catch(e){}
+  }, 300);
+})();
+</script>
+</body>
+</html>

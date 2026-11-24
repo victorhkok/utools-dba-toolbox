@@ -1,0 +1,13 @@
+-- RMAN 全量备份命令
+-- 适用版本：11g+
+-- 风险：谨慎
+-- 说明：BACKUP DATABASE PLUS ARCHIVELOG
+-- 提醒：PLUS ARCHIVELOG 会先切归档再备份；DELETE OBSOLETE 按保留策略删旧备份，执行前先 SHOW RETENTION POLICY 确认。
+
+-- RMAN 命令（在 RMAN 提示符或 rman target / @脚本 里执行）：
+RUN {
+  ALLOCATE CHANNEL c1 DEVICE TYPE DISK FORMAT '<backup_dir>/%d_%T_%U.bak';
+  BACKUP DATABASE PLUS ARCHIVELOG;
+  DELETE NOPROMPT OBSOLETE;
+  RELEASE CHANNEL c1;
+}

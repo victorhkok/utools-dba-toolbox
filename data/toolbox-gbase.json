@@ -1,0 +1,167 @@
+{
+  "id": "gbase",
+  "name": "GBase 8a / 8s",
+  "versions": "8a MPP / 8s OLTP",
+  "note": "GBase GCA，国产化方向",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "集群",
+          "items": [
+            {
+              "title": "集群节点状态（8a）",
+              "versions": "8a",
+              "risk": "只读",
+              "desc": "gcadmin",
+              "sql": "-- shell: gcadmin（GBase 8a 集群管理命令）\n-- shell: gcadmin showcluster\n-- shell: gcadmin showdistribution",
+              "params": [],
+              "notes": "gcadmin 需在 8a 协调节点上执行，输出以 gcadmin 为准。"
+            },
+            {
+              "title": "实例状态（8s）",
+              "versions": "8s",
+              "risk": "只读",
+              "desc": "onstat",
+              "sql": "-- shell: onstat（GBase 8s / Informix 兼容命令）\n-- shell: onstat -\n-- shell: onstat -g ses",
+              "params": [],
+              "notes": "onstat 需在 8s 实例所在服务器执行，参数需按 8s 版本核对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "性能",
+          "items": [
+            {
+              "title": "分布键 / 数据倾斜检查（8a）",
+              "versions": "8a",
+              "risk": "只读",
+              "desc": "数据分布",
+              "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','performance_schema') ORDER BY TABLE_ROWS DESC LIMIT 20;\n-- 分布键与倾斜详情以 8a 的分布信息表为准，系统表名按版本不同，需在 8a 实测核对，不要硬编。",
+              "params": [],
+              "notes": "8a 分布信息系统表名需在 8a 实测核对，本条只给通用表大小查询。"
+            },
+            {
+              "title": "统计信息 / 优化器",
+              "versions": "8a",
+              "risk": "只读",
+              "desc": "ANALYZE",
+              "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS, UPDATE_TIME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','performance_schema') ORDER BY UPDATE_TIME ASC LIMIT 20;\n-- 如需收集统计信息（建议非高峰）：\n-- ANALYZE TABLE <SCHEMA>.<TABLE>;",
+              "params": [
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "8a 的统计信息收集语法需在 8a 实测核对，ANALYZE 模板仅供参考。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "慢SQL Top",
+              "versions": "8a/8s",
+              "risk": "只读",
+              "desc": "系统表 / 日志",
+              "sql": "-- 8a/8s 的慢 SQL 以慢查询日志与系统表为准，系统表名按版本不同：\n-- shell: 查看 8a 慢查询日志路径与配置（gbase 配置文件），再用文本工具分析\n-- 需在 8a/8s 实测核对慢 SQL 系统表名后再填具体查询，不要硬编。",
+              "params": [],
+              "notes": "8a/8s 慢 SQL 系统表名需在 8a/8s 实测核对，本条暂不编造系统表。"
+            },
+            {
+              "title": "执行计划",
+              "versions": "8a/8s",
+              "risk": "只读",
+              "desc": "EXPLAIN",
+              "sql": "EXPLAIN SELECT * FROM <TABLE> WHERE <CONDITION>;",
+              "params": [
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                },
+                {
+                  "name": "CONDITION",
+                  "desc": "WHERE 条件"
+                }
+              ],
+              "notes": "8a 与 8s 的 EXPLAIN 输出格式不同，需按版本核对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "8a 备份（gcbackup）",
+              "versions": "8a",
+              "risk": "谨慎",
+              "desc": "集群备份",
+              "sql": "-- shell: gcbackup（GBase 8a 集群备份，需在协调节点执行）\n-- shell: gcbackup -h\n-- shell: gcbackup <备份目录>",
+              "params": [
+                {
+                  "name": "备份目录",
+                  "desc": "备份目标目录"
+                }
+              ],
+              "notes": "gcbackup 参数需在 8a 实测核对，备份前确认磁盘余量与集群状态。"
+            },
+            {
+              "title": "8s 逻辑备份（dbexport）",
+              "versions": "8s",
+              "risk": "谨慎",
+              "desc": "dbexport",
+              "sql": "-- shell: dbexport（GBase 8s / Informix 兼容逻辑备份）\n-- shell: dbexport -d <DATABASE> -o <备份目录>",
+              "params": [
+                {
+                  "name": "DATABASE",
+                  "desc": "数据库名"
+                },
+                {
+                  "name": "备份目录",
+                  "desc": "备份目标目录"
+                }
+              ],
+              "notes": "dbexport 参数需在 8s 实测核对，备份前确认磁盘余量。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "迁移",
+      "subcategories": [
+        {
+          "name": "迁移",
+          "items": [
+            {
+              "title": "Oracle/MySQL → GBase 迁移清单",
+              "versions": "8a/8s",
+              "risk": "谨慎",
+              "desc": "迁移工具 / 类型映射",
+              "sql": "-- 迁移前检查（只读，通用）：\nSELECT TABLE_SCHEMA, COUNT(*) AS TABLE_CNT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','performance_schema','mysql','sys') GROUP BY TABLE_SCHEMA ORDER BY TABLE_CNT DESC LIMIT 20;\n-- 数据类型映射、分布键选择、字符集需以 GBase 迁移工具评估报告为准。",
+              "params": [],
+              "notes": "迁移工具与类型映射需按 8a/8s 版本核对，分布键选择是 8a 迁移的关键。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,278 @@
+{
+  "id": "dameng",
+  "name": "达梦 DM8",
+  "versions": "DM8 / DM8.1",
+  "note": "国产化迁移方向，GCA/YCA 相关",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "实例",
+          "items": [
+            {
+              "title": "实例状态 / 版本",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "SELECT * FROM V$INSTANCE",
+              "sql": "SELECT NAME, INSTANCE_NAME, VERSION, STATUS, STARTUP_TIME, MODE$ AS MODE FROM V$INSTANCE;",
+              "params": [],
+              "notes": "DM8 视图 V$INSTANCE，需 DBA 或相应查询权限。"
+            },
+            {
+              "title": "表空间 / 数据文件",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "DBA_TABLESPACES",
+              "sql": "SELECT T.TABLESPACE_NAME, T.STATUS, T.CONTENTS, F.FILE_NAME, F.BYTES/1024/1024 AS SIZE_MB, F.AUTOEXTENSIBLE\nFROM DBA_TABLESPACES T LEFT JOIN DBA_DATA_FILES F ON T.TABLESPACE_NAME = F.TABLESPACE_NAME\nORDER BY T.TABLESPACE_NAME, F.FILE_NAME;",
+              "params": [],
+              "notes": "DBA_TABLESPACES / DBA_DATA_FILES 为 DM8 兼容 Oracle 的数据字典视图。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "性能",
+          "items": [
+            {
+              "title": "缓存命中率 / 内存",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "V$BUFFERPOOL",
+              "sql": "SELECT TOP 20 NAME, (1 - PHYSICAL_READS / NULLIF(GETS, 0)) * 100 AS HIT_RATIO_PCT, GETS, PHYSICAL_READS\nFROM V$BUFFERPOOL\nORDER BY NAME;",
+              "params": [],
+              "notes": "V$BUFFERPOOL 列名需在 DM8 实测核对，GETS/PHYSICAL_READS 为 0 时结果为 NULL。"
+            },
+            {
+              "title": "统计信息收集",
+              "versions": "DM8+",
+              "risk": "谨慎",
+              "desc": "DBMS_STATS",
+              "sql": "-- 先确认表名与 schema，再执行（建议非高峰）：\n-- DANGER: DBMS_STATS.GATHER_TABLE_STATS('<SCHEMA>', '<TABLE>');\nSELECT TABLE_NAME, LAST_ANALYZED, NUM_ROWS FROM DBA_TABLES WHERE OWNER = '<SCHEMA>' AND TABLE_NAME = '<TABLE>';",
+              "params": [
+                {
+                  "name": "SCHEMA",
+                  "desc": "模式名"
+                },
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "DM8 的 DBMS_STATS 与 Oracle 兼容，但参数细节需在 DM8 实测核对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "慢SQL Top（V$SQL）",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "V$SQL",
+              "sql": "SELECT TOP 20 SQL_TEXT, ELAPSED_TIME, EXECUTIONS, ROWS_PROCESSED\nFROM V$SQL\nWHERE ELAPSED_TIME > 0\nORDER BY ELAPSED_TIME DESC;",
+              "params": [],
+              "notes": "V$SQL 在 DM8 中的列名（ELAPSED_TIME/ROWS_PROCESSED）需在 DM8 实测核对。"
+            },
+            {
+              "title": "执行计划（EXPLAIN）",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "DM EXPLAIN",
+              "sql": "EXPLAIN SELECT * FROM <SCHEMA>.<TABLE> WHERE <CONDITION>;",
+              "params": [
+                {
+                  "name": "SCHEMA.TABLE",
+                  "desc": "表名"
+                },
+                {
+                  "name": "CONDITION",
+                  "desc": "WHERE 条件"
+                }
+              ],
+              "notes": "DM8 支持 EXPLAIN，输出格式与 Oracle 的 DBMS_XPLAN 不同，需在 DM8 实测核对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "锁 / 会话",
+      "subcategories": [
+        {
+          "name": "锁",
+          "items": [
+            {
+              "title": "阻塞锁 / 会话",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "V$LOCK / V$SESSIONS",
+              "sql": "SELECT TOP 20 L.SESS_ID AS BLOCKED_SESS, L.TRX_ID, S.USERNAME, S.CLIENT_IP, S.SQL_TEXT\nFROM V$LOCK L JOIN V$SESSIONS S ON L.SESS_ID = S.SESS_ID\nWHERE L.BLOCKED = 1\nORDER BY L.SESS_ID;",
+              "params": [],
+              "notes": "V$LOCK/V$SESSIONS 的阻塞标志列名需在 DM8 实测核对，如无 BLOCKED 列请改查 V$LOCK 全量。"
+            },
+            {
+              "title": "杀会话",
+              "versions": "DM8+",
+              "risk": "危险",
+              "desc": "SP_CLOSE_SESSION",
+              "sql": "-- 1. 先确认（只读查询）：\nSELECT SESS_ID, USERNAME, CLIENT_IP, SQL_TEXT FROM V$SESSIONS WHERE SESS_ID = <SESS_ID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: SP_CLOSE_SESSION(<SESS_ID>);",
+              "params": [
+                {
+                  "name": "SESS_ID",
+                  "desc": "会话 ID"
+                }
+              ],
+              "notes": "SP_CLOSE_SESSION 需 DBA 权限，杀会话前务必确认业务影响。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间",
+      "subcategories": [
+        {
+          "name": "空间",
+          "items": [
+            {
+              "title": "表空间使用率",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "DBA_DATA_FILES",
+              "sql": "SELECT TOP 20 T.TABLESPACE_NAME, ROUND(SUM(F.BYTES)/1024/1024, 2) AS TOTAL_MB,\n  ROUND((SUM(F.BYTES) - MAX(NVL(FREE.BYTES, 0)))/1024/1024, 2) AS USED_MB,\n  ROUND((1 - MAX(NVL(FREE.BYTES, 0))/SUM(F.BYTES)) * 100, 2) AS USED_PCT\nFROM DBA_DATA_FILES F\nJOIN DBA_TABLESPACES T ON F.TABLESPACE_NAME = T.TABLESPACE_NAME\nLEFT JOIN (SELECT TABLESPACE_NAME, SUM(BYTES) BYTES FROM DBA_FREE_SPACE GROUP BY TABLESPACE_NAME) FREE\n  ON FREE.TABLESPACE_NAME = T.TABLESPACE_NAME\nGROUP BY T.TABLESPACE_NAME\nORDER BY USED_PCT DESC;",
+              "params": [],
+              "notes": "DBA_FREE_SPACE 在 DM8 中的列名需在 DM8 实测核对，>85% 预警。"
+            },
+            {
+              "title": "大表 Top",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "DBA_SEGMENTS",
+              "sql": "SELECT TOP 20 OWNER, SEGMENT_NAME, SEGMENT_TYPE, ROUND(BYTES/1024/1024, 2) AS SIZE_MB\nFROM DBA_SEGMENTS\nORDER BY BYTES DESC;",
+              "params": [],
+              "notes": "DBA_SEGMENTS 为 DM8 兼容 Oracle 的数据字典视图。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "全备 / 增量（BACKUP DATABASE）",
+              "versions": "DM8+",
+              "risk": "谨慎",
+              "desc": "DMRMAN",
+              "sql": "-- shell: DMRMAN（DM8 备份恢复工具，需先停库或按 DMRMAN 要求操作）\n-- shell: dmrman CTLFILE=/dm8/data/DAMENG/dm.ini\n-- DMRMAN> BACKUP DATABASE '/dm8/data/DAMENG/dm.ini' FULL BACKUPSET '/dm8/backup/full_20261124';\n-- DMRMAN> BACKUP DATABASE '/dm8/data/DAMENG/dm.ini' INCREMENTAL BACKUPSET '/dm8/backup/incr_20261124';",
+              "params": [
+                {
+                  "name": "dm.ini 路径",
+                  "desc": "DM 实例配置文件路径"
+                },
+                {
+                  "name": "BACKUPSET",
+                  "desc": "备份集目录"
+                }
+              ],
+              "notes": "DMRMAN 备份命令语法需按 DM8 版本核对，备份前确认备份目录磁盘余量。"
+            },
+            {
+              "title": "闪回 / 时间点恢复",
+              "versions": "DM8+",
+              "risk": "危险",
+              "desc": "DMRMAN RESTORE",
+              "sql": "-- 1. 先确认备份集与归档（只读）：\n-- shell: dmrman CTLFILE=/dm8/data/DAMENG/dm.ini\n-- DMRMAN> SHOW BACKUPSETS;\n-- 2. 时间点恢复为危险操作，先在测试库演练：\n-- DANGER: DMRMAN> RESTORE DATABASE '/dm8/data/DAMENG/dm.ini' FROM BACKUPSET '/dm8/backup/full_20261124' UNTIL TIME '2026-11-24 10:00:00';",
+              "params": [
+                {
+                  "name": "BACKUPSET",
+                  "desc": "备份集目录"
+                },
+                {
+                  "name": "UNTIL TIME",
+                  "desc": "恢复目标时间"
+                }
+              ],
+              "notes": "DMRMAN RESTORE 语法与 UNTIL 子句需在 DM8 实测核对，生产恢复前务必先停写并做副本。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用",
+      "subcategories": [
+        {
+          "name": "DW / DSC",
+          "items": [
+            {
+              "title": "数据守护（DW）状态",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "V$DMWATCHER",
+              "sql": "SELECT TOP 20 * FROM V$DMWATCHER;",
+              "params": [],
+              "notes": "V$DMWATCHER 的列名与返回值需在 DM8 实测核对，未部署数据守护时该视图可能无数据。"
+            },
+            {
+              "title": "DSC 集群状态",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "DMASM",
+              "sql": "-- shell: DMASM / DSC 集群状态以 DMASM 工具与 dmsvc 进程为准\n-- shell: ps -ef | grep dmasm\n-- shell: dmasm --help\nSELECT NAME, INSTANCE_NAME, STATUS FROM V$INSTANCE;",
+              "params": [],
+              "notes": "DMASM/DSC 的状态查询方式需在 DM8 DSC 环境实测核对，不要凭印象执行集群命令。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "迁移",
+      "subcategories": [
+        {
+          "name": "迁移",
+          "items": [
+            {
+              "title": "Oracle → DM 迁移检查清单",
+              "versions": "DM8+",
+              "risk": "谨慎",
+              "desc": "DTS 工具 / 数据类型映射",
+              "sql": "-- 迁移前检查（只读）：对象数量、数据类型、序列、存储过程\nSELECT OBJECT_TYPE, COUNT(*) AS CNT FROM DBA_OBJECTS WHERE OWNER = '<SCHEMA>' GROUP BY OBJECT_TYPE ORDER BY CNT DESC;\nSELECT TOP 20 TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM DBA_TAB_COLUMNS WHERE OWNER = '<SCHEMA>' AND DATA_TYPE IN ('NUMBER','VARCHAR2','CLOB','BLOB','DATE') ORDER BY TABLE_NAME;",
+              "params": [
+                {
+                  "name": "SCHEMA",
+                  "desc": "源模式名"
+                }
+              ],
+              "notes": "迁移以 DM 官方 DTS 工具为准，数据类型映射（NUMBER/VARCHAR2 等）需逐项核对。"
+            },
+            {
+              "title": "兼容性检查（方言差异）",
+              "versions": "DM8+",
+              "risk": "只读",
+              "desc": "NVL/ROWNUM 等",
+              "sql": "-- 检查源库中 DM 不完全兼容的写法（在 Oracle 源库或迁移评估库执行）：\nSELECT TOP 20 OWNER, NAME, TYPE, LINE, TEXT FROM DBA_SOURCE\nWHERE TEXT LIKE '%ROWNUM%' OR TEXT LIKE '%NVL(%' OR TEXT LIKE '%SYSDATE%'\nORDER BY OWNER, NAME, LINE;",
+              "params": [],
+              "notes": "DBA_SOURCE 的列名需在 DM8 实测核对，ROWNUM/NVL/SYSDATE 在 DM8 多数兼容但仍需逐项核对。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

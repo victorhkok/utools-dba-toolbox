@@ -1,0 +1,13 @@
+-- RMAN 恢复演练清单
+-- 适用版本：11g+
+-- 风险：谨慎
+-- 说明：测试库演练，勿在生产直接跑
+-- 提醒：把握一般：本条是演练清单不是单条可执行 SQL，RESTORE/RECOVER 的具体语法随场景（全库/表空间/时间点）而变，演练前先做全备。
+
+-- 演练清单（只在测试库/演练环境执行，勿在生产直接跑）：
+-- 1. LIST BACKUP SUMMARY;              -- 确认最近一次全备+归档都在
+-- 2. SHOW RETENTION POLICY;            -- 确认保留策略
+-- 3. RESTORE DATABASE PREVIEW;         -- 预演恢复，不真正写文件
+-- 4. VALIDATE DATABASE;                -- 校验备份可读
+-- 5. RESTORE DATABASE; RECOVER DATABASE; ALTER DATABASE OPEN RESETLOGS;
+--    -- 第 5 步只在演练库执行，生产恢复按实际故障场景走，勿照抄 RESETLOGS

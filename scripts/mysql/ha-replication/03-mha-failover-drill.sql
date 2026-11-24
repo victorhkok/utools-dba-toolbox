@@ -1,0 +1,12 @@
+-- MHA 切换演练清单
+-- 适用版本：5.7+
+-- 风险：谨慎
+-- 说明：masterha_check_status
+-- 大类：高可用 / 复制 / 小类：MGR / MHA
+-- shell: 检查 SSH 和复制
+-- masterha_check_ssh --conf="<mha_conf>"
+-- masterha_check_repl --conf="<mha_conf>"
+-- shell: 演练切换（只在演练环境，interactive=0 表示不交互确认，务必先确认）
+-- masterha_master_switch --conf="<mha_conf>" --master_state=alive --new_master_host="<new_master_host>" --orig_master_is_new_slave --running_updates_limit=100 --interactive=0
+-- 切换前先确认主从：
+SHOW SLAVE STATUS;

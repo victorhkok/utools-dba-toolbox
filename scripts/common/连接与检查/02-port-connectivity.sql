@@ -1,0 +1,11 @@
+-- 端口 / 连通性检查
+-- 适用版本：全版本
+-- 风险：只读
+-- 说明：telnet / nc 模板
+-- 备注：常用端口：Oracle 1521、MySQL/TiDB 3306/4000、PG 5432、SQL Server 1433、DM 5236、OB 2883、Redis 6379。
+
+-- shell: Windows
+-- shell: Test-NetConnection -ComputerName <HOST> -Port <PORT>
+-- shell: Linux/macOS
+-- shell: nc -zv <HOST> <PORT>
+-- shell: telnet <HOST> <PORT>

@@ -1,0 +1,2050 @@
+{
+  "version": "0.2-draft",
+  "updated": "2026-11-24",
+  "total_items": 215,
+  "structure": "数据库 > 大类 > 小类 > 脚本 | 适用版本 | 风险（只读/谨慎/危险）",
+  "databases": [
+    {
+      "id": "oracle",
+      "name": "Oracle",
+      "versions": "11gR2 / 12c / 19c / 21c / 23ai",
+      "note": "你的主力，OCP 11g，RAC/DG/OGG",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例与版本",
+              "items": [
+                {
+                  "title": "实例状态 / 版本 / 启动时间",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$instance, v$database"
+                },
+                {
+                  "title": "监听与服务状态",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "lsnrctl status / srvctl status"
+                },
+                {
+                  "title": "数据库 / PDB 列表",
+                  "versions": "12c+",
+                  "risk": "只读",
+                  "desc": "CDB+PDB，11g无PDB"
+                },
+                {
+                  "title": "无效对象清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_objects status=INVALID"
+                },
+                {
+                  "title": "定时任务 / 作业状态",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_scheduler_jobs"
+                },
+                {
+                  "title": "告警日志近24h错误",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "需读alert log / ADRCI"
+                }
+              ]
+            },
+            {
+              "name": "健康指标",
+              "items": [
+                {
+                  "title": "表空间使用率 Top",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": ">85%预警"
+                },
+                {
+                  "title": "归档日志生成量 / 切换频率",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$archived_log"
+                },
+                {
+                  "title": "临时表空间使用",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$tempseg_usage"
+                },
+                {
+                  "title": "UNDO 使用与保留",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$undostat"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "AWR / ASH",
+              "items": [
+                {
+                  "title": "生成 AWR 快照 / 报告",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "awrrpt.sql，需Diagnostic Pack授权"
+                },
+                {
+                  "title": "ASH Top 等待事件",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$active_session_history"
+                },
+                {
+                  "title": "DB Time / 负载画像",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "AWR Load Profile"
+                },
+                {
+                  "title": "SGA / PGA 使用与建议",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sga, v$pga_target_advice"
+                }
+              ]
+            },
+            {
+              "name": "缓存与统计",
+              "items": [
+                {
+                  "title": "Buffer Cache 命中率",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sysstat"
+                },
+                {
+                  "title": "Library Cache / 共享池",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$librarycache"
+                },
+                {
+                  "title": "表 / 索引统计信息是否过期",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_tab_statistics"
+                },
+                {
+                  "title": "收集统计信息（DBMS_STATS）",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "生产建议非高峰执行"
+                }
+              ]
+            },
+            {
+              "name": "索引",
+              "items": [
+                {
+                  "title": "未使用索引清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$object_usage，需先监控"
+                },
+                {
+                  "title": "缺失索引建议（SQL Tuning）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "DBMS_SQLTUNE"
+                },
+                {
+                  "title": "索引碎片 / 重建评估",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "重建前评估锁与空间"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位慢SQL",
+              "items": [
+                {
+                  "title": "Top SQL by Elapsed Time",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sql / AWR Top SQL"
+                },
+                {
+                  "title": "Top SQL by Buffer Gets",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "逻辑读最高"
+                },
+                {
+                  "title": "Top SQL by Executions",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "执行次数最多"
+                },
+                {
+                  "title": "近1h 慢SQL（执行>5s）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sql + elapsed"
+                }
+              ]
+            },
+            {
+              "name": "执行计划",
+              "items": [
+                {
+                  "title": "查看执行计划（EXPLAIN PLAN）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "DBMS_XPLAN"
+                },
+                {
+                  "title": "真实执行计划（DBMS_XPLAN.DISPLAY_CURSOR）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "带A-Rows / Buffers"
+                },
+                {
+                  "title": "全表扫描 SQL 清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "TABLE ACCESS FULL"
+                },
+                {
+                  "title": "绑定变量窥探 / 直方图检查",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$sql_bind_capture"
+                }
+              ]
+            },
+            {
+              "name": "优化手段",
+              "items": [
+                {
+                  "title": "SQL Profile / Baseline 建议",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "SQL Tuning Advisor"
+                },
+                {
+                  "title": "自动索引建议（19c+）",
+                  "versions": "19c+",
+                  "risk": "谨慎",
+                  "desc": "DBMS_AUTO_INDEX"
+                },
+                {
+                  "title": "Hint 改写模板",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "/*+ INDEX / PARALLEL */ 仅模板"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话 / 等待",
+          "subcategories": [
+            {
+              "name": "锁与阻塞",
+              "items": [
+                {
+                  "title": "当前阻塞锁链",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$lock + v$session blocking"
+                },
+                {
+                  "title": "死锁历史（ORA-00060）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "alert log / trace"
+                },
+                {
+                  "title": "行锁等待详情",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$session + row_wait"
+                },
+                {
+                  "title": "杀会话（ALTER SYSTEM KILL）",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "先确认业务影响"
+                }
+              ]
+            },
+            {
+              "name": "会话与等待",
+              "items": [
+                {
+                  "title": "活跃会话 Top",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$session status=ACTIVE"
+                },
+                {
+                  "title": "等待事件 Top 10",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$system_event"
+                },
+                {
+                  "title": "长运行会话（>30min）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$session + sql"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间 / 存储",
+          "subcategories": [
+            {
+              "name": "表空间",
+              "items": [
+                {
+                  "title": "表空间扩容（ADD DATAFILE）",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "先查磁盘余量"
+                },
+                {
+                  "title": "数据文件 / 自动扩展状态",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_data_files"
+                },
+                {
+                  "title": "段增长 Top 20",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_segments"
+                },
+                {
+                  "title": "大表 / 大索引清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "按MB排序"
+                },
+                {
+                  "title": "回收站清理（PURGE）",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "DROP 后恢复会失效"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "RMAN",
+              "items": [
+                {
+                  "title": "RMAN 全量备份命令",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "BACKUP DATABASE PLUS ARCHIVELOG"
+                },
+                {
+                  "title": "RMAN 增量 0/1 级备份",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "Level 0/1 + 归档"
+                },
+                {
+                  "title": "RMAN 备份集 / 保留策略检查",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "LIST BACKUP / REPORT"
+                },
+                {
+                  "title": "RMAN 恢复演练清单",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "测试库演练，勿在生产直接跑"
+                }
+              ]
+            },
+            {
+              "name": "闪回与 PITR",
+              "items": [
+                {
+                  "title": "闪回查询（AS OF TIMESTAMP）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "需UNDO保留"
+                },
+                {
+                  "title": "闪回表（FLASHBACK TABLE）",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "需行移动开启"
+                },
+                {
+                  "title": "RMAN 表级 PITR",
+                  "versions": "12c+",
+                  "risk": "危险",
+                  "desc": "12c+支持，4-12h"
+                },
+                {
+                  "title": "块损坏 BMR 恢复",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "BLOCKRECOVER"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用 / 容灾",
+          "subcategories": [
+            {
+              "name": "RAC",
+              "items": [
+                {
+                  "title": "RAC 节点 / 实例状态",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "srvctl / crsctl"
+                },
+                {
+                  "title": "RAC 互联 / 心跳检查",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "oifcfg / 集群日志"
+                },
+                {
+                  "title": "服务切换 / 负载均衡检查",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "srvctl config service"
+                }
+              ]
+            },
+            {
+              "name": "DG / OGG",
+              "items": [
+                {
+                  "title": "DG 备库延迟（Apply Lag）",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "v$dataguard_stats"
+                },
+                {
+                  "title": "DG 切换演练（Switchover）",
+                  "versions": "11g+",
+                  "risk": "危险",
+                  "desc": "演练前停写确认"
+                },
+                {
+                  "title": "OGG 抽取 / 投递延迟",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "INFO ALL / lag"
+                },
+                {
+                  "title": "容灾 RPO=0 演练清单",
+                  "versions": "11g+",
+                  "risk": "谨慎",
+                  "desc": "按你的银行案例沉淀"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 权限 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "用户 / 角色 / 权限清单",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_users / dba_role_privs"
+                },
+                {
+                  "title": "密码过期 / 锁定账号",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "dba_users account_status"
+                },
+                {
+                  "title": "审计开启与审计日志",
+                  "versions": "11g+",
+                  "risk": "只读",
+                  "desc": "11g审计 / 12c+统一审计"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mysql",
+      "name": "MySQL",
+      "versions": "5.7 / 8.0 / 8.4 LTS",
+      "note": "主力，MySQL 8.0 OCP，MGR/MHA/主从",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例与状态",
+              "items": [
+                {
+                  "title": "实例状态 / 版本 / uptime",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW GLOBAL STATUS"
+                },
+                {
+                  "title": "连接数 / 最大连接",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "Threads_connected"
+                },
+                {
+                  "title": "慢查询开关与阈值",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "slow_query_log"
+                },
+                {
+                  "title": "错误日志近24h",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "error log"
+                },
+                {
+                  "title": "定时任务 / EVENT 状态",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW EVENTS"
+                }
+              ]
+            },
+            {
+              "name": "健康指标",
+              "items": [
+                {
+                  "title": "InnoDB Buffer Pool 命中率",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "Innodb_buffer_pool_read%"
+                },
+                {
+                  "title": "QPS / TPS 趋势",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "Questions / Com_commit"
+                },
+                {
+                  "title": "临时表 / 排序溢出",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "Created_tmp_disk_tables"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "参数与内存",
+              "items": [
+                {
+                  "title": "关键参数速查（innodb_buffer_pool_size 等）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW VARIABLES"
+                },
+                {
+                  "title": "Buffer Pool 建议值",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "按内存 70-80% 估算"
+                },
+                {
+                  "title": "统计信息 / 直方图（8.0+）",
+                  "versions": "8.0+",
+                  "risk": "只读",
+                  "desc": "information_schema.COLUMN_STATISTICS"
+                }
+              ]
+            },
+            {
+              "name": "索引",
+              "items": [
+                {
+                  "title": "未使用索引（sys.schema_unused_indexes）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "sys 库"
+                },
+                {
+                  "title": "冗余 / 重复索引",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "sys.schema_redundant_indexes"
+                },
+                {
+                  "title": "索引基数与选择性",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW INDEX"
+                },
+                {
+                  "title": "不可见索引（8.0+）",
+                  "versions": "8.0+",
+                  "risk": "谨慎",
+                  "desc": "Invisible Index 试索引"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢查询日志分析（mysqldumpslow / pt-query-digest）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "命令行工具"
+                },
+                {
+                  "title": "performance_schema Top SQL",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "events_statements_summary"
+                },
+                {
+                  "title": "sys.statements_with_runtimes_in_95th",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "sys 库 95分位"
+                },
+                {
+                  "title": "全表扫描 SQL",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "No_index_used"
+                }
+              ]
+            },
+            {
+              "name": "执行计划",
+              "items": [
+                {
+                  "title": "EXPLAIN / EXPLAIN ANALYZE（8.0.18+）",
+                  "versions": "8.0+",
+                  "risk": "只读",
+                  "desc": "真实执行耗时"
+                },
+                {
+                  "title": "执行计划走索引 vs 全表",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "type=ALL 警示"
+                },
+                {
+                  "title": "JOIN 顺序 / 驱动表检查",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "EXPLAIN rows"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "当前锁等待（sys.innodb_lock_waits）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "sys 库"
+                },
+                {
+                  "title": "死锁日志（SHOW ENGINE INNODB STATUS）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "LATEST DETECTED DEADLOCK"
+                },
+                {
+                  "title": "杀会话（KILL CONNECTION）",
+                  "versions": "5.7+",
+                  "risk": "危险",
+                  "desc": "先确认"
+                },
+                {
+                  "title": "长事务（>30min）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "information_schema.INNODB_TRX"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间 / 存储",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "库 / 表大小 Top 20",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "information_schema.TABLES"
+                },
+                {
+                  "title": "碎片率与 OPTIMIZE 评估",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "OPTIMIZE 会锁表（8.0 在线部分）"
+                },
+                {
+                  "title": "ibdata / undo / redo 大小",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW VARIABLES"
+                },
+                {
+                  "title": "磁盘使用率预警",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "df + 表大小"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "逻辑备份",
+              "items": [
+                {
+                  "title": "mysqldump 全备 / 单库 / 单表",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "--single-transaction"
+                },
+                {
+                  "title": "mydumper 并行备份",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "大库首选"
+                },
+                {
+                  "title": "binlog PITR 恢复",
+                  "versions": "5.7+",
+                  "risk": "危险",
+                  "desc": "mysqlbinlog + STOPAT"
+                }
+              ]
+            },
+            {
+              "name": "物理备份",
+              "items": [
+                {
+                  "title": "XtraBackup 全备 / 增量",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "xtrabackup --backup"
+                },
+                {
+                  "title": "XtraBackup 恢复演练",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "--prepare + --copy-back"
+                },
+                {
+                  "title": "闪回（binlog2sql）",
+                  "versions": "5.7+",
+                  "risk": "危险",
+                  "desc": "DELETE/UPDATE 闪回"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用 / 复制",
+          "subcategories": [
+            {
+              "name": "主从",
+              "items": [
+                {
+                  "title": "主从延迟（Seconds_Behind_Master）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "SHOW SLAVE STATUS"
+                },
+                {
+                  "title": "复制错误定位（Last_Error）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "IO/SQL线程"
+                },
+                {
+                  "title": "GTID 一致性检查",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "gtid_executed"
+                }
+              ]
+            },
+            {
+              "name": "MGR / MHA",
+              "items": [
+                {
+                  "title": "MGR 成员状态",
+                  "versions": "8.0+",
+                  "risk": "只读",
+                  "desc": "performance_schema.replication_group_members"
+                },
+                {
+                  "title": "MGR 主节点切换",
+                  "versions": "8.0+",
+                  "risk": "危险",
+                  "desc": "group_replication_set_as_primary"
+                },
+                {
+                  "title": "MHA 切换演练清单",
+                  "versions": "5.7+",
+                  "risk": "谨慎",
+                  "desc": "masterha_check_status"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "用户 / 权限清单",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "mysql.user"
+                },
+                {
+                  "title": "弱密码 / 无密码账号",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "authentication_string 为空"
+                },
+                {
+                  "title": "审计（8.0 audit log / 5.7 插件）",
+                  "versions": "5.7+",
+                  "risk": "只读",
+                  "desc": "按版本区分"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "versions": "12 / 13 / 14 / 15 / 16 / 17",
+      "note": "PCA 考证中，主力扩展方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "版本 / uptime / 连接数",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_activity"
+                },
+                {
+                  "title": "WAL 生成量",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_wal"
+                },
+                {
+                  "title": "后台进程状态",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_activity backend_type"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "参数与缓存",
+              "items": [
+                {
+                  "title": "shared_buffers / work_mem 建议",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "SHOW"
+                },
+                {
+                  "title": "缓存命中率（heap / index）",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_statio_user_tables"
+                },
+                {
+                  "title": "统计信息 / ANALYZE 状态",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_user_tables"
+                },
+                {
+                  "title": "自动 VACUUM 状态",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "autovacuum"
+                }
+              ]
+            },
+            {
+              "name": "索引",
+              "items": [
+                {
+                  "title": "未使用索引",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_user_indexes idx_scan=0"
+                },
+                {
+                  "title": "缺失索引（hypopg 评估）",
+                  "versions": "12+",
+                  "risk": "谨慎",
+                  "desc": "hypopg 扩展"
+                },
+                {
+                  "title": "膨胀索引 / bloat 评估",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pgstattuple"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "pg_stat_statements Top SQL",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "需开启扩展"
+                },
+                {
+                  "title": "慢查询日志（log_min_duration）",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "postgresql.conf"
+                },
+                {
+                  "title": "EXPLAIN ANALYZE",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "真实耗时+Buffers"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁链（pg_blocking_pids）",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_activity"
+                },
+                {
+                  "title": "死锁统计",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_stat_database deadlocks"
+                },
+                {
+                  "title": "终止会话（pg_terminate_backend）",
+                  "versions": "12+",
+                  "risk": "危险",
+                  "desc": "先确认"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "库 / 表大小 Top",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_database_size"
+                },
+                {
+                  "title": "表膨胀 / VACUUM 建议",
+                  "versions": "12+",
+                  "risk": "谨慎",
+                  "desc": "VACUUM / VACUUM FULL 区分"
+                },
+                {
+                  "title": "死元组比例",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "n_dead_tup"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "pg_dump / pg_dumpall",
+                  "versions": "12+",
+                  "risk": "谨慎",
+                  "desc": "逻辑备份"
+                },
+                {
+                  "title": "pg_basebackup 物理备份",
+                  "versions": "12+",
+                  "risk": "谨慎",
+                  "desc": "流复制备份"
+                },
+                {
+                  "title": "PITR（WAL + recovery_target_time）",
+                  "versions": "12+",
+                  "risk": "危险",
+                  "desc": "需连续WAL"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "流复制",
+              "items": [
+                {
+                  "title": "主从延迟（pg_stat_replication）",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "replay_lag"
+                },
+                {
+                  "title": "同步 / 异步模式检查",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "synchronous_standby_names"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "角色 / 权限清单",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_roles"
+                },
+                {
+                  "title": "行级安全（RLS）检查",
+                  "versions": "12+",
+                  "risk": "只读",
+                  "desc": "pg_policies"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sqlserver",
+      "name": "SQL Server",
+      "versions": "2016 / 2019 / 2022",
+      "note": "AlwaysOn 方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "版本 / 实例状态",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "@@VERSION / sys.dm_os_sys_info"
+                },
+                {
+                  "title": "连接 / 作业（Agent Job）状态",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "msdb.dbo.sysjobs"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "DMV",
+              "items": [
+                {
+                  "title": "缓存命中率 / 内存使用",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.dm_os_performance_counters"
+                },
+                {
+                  "title": "缺失索引 DMV",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.dm_db_missing_index_details"
+                },
+                {
+                  "title": "统计信息过期",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.stats"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "Query Store Top SQL（2016+）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.query_store_runtime_stats"
+                },
+                {
+                  "title": "最耗 CPU / IO 的查询",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.dm_exec_query_stats"
+                },
+                {
+                  "title": "执行计划（实际 vs 预估）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "SSMS / DMV"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞链（sys.dm_exec_requests）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "blocking_session_id"
+                },
+                {
+                  "title": "死锁图（Extended Events）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "xml_deadlock_report"
+                },
+                {
+                  "title": "KILL 会话",
+                  "versions": "2016+",
+                  "risk": "危险",
+                  "desc": "KILL spid"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "数据库 / 文件大小 Top",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.database_files"
+                },
+                {
+                  "title": "日志文件增长 / VLF",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "DBCC LOGINFO"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "完整 / 差异 / 日志备份",
+                  "versions": "2016+",
+                  "risk": "谨慎",
+                  "desc": "BACKUP DATABASE/LOG"
+                },
+                {
+                  "title": "STOPAT 时间点恢复",
+                  "versions": "2016+",
+                  "risk": "危险",
+                  "desc": "RESTORE ... STOPAT"
+                },
+                {
+                  "title": "备份历史检查",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "msdb.dbo.backupset"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "AlwaysOn",
+              "items": [
+                {
+                  "title": "可用性组状态 / 同步延迟",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.dm_hadr_availability_replica_states"
+                },
+                {
+                  "title": "故障转移演练清单",
+                  "versions": "2016+",
+                  "risk": "危险",
+                  "desc": "AG Failover"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "用户 / 安全",
+          "subcategories": [
+            {
+              "name": "账号",
+              "items": [
+                {
+                  "title": "登录名 / 用户 / 角色",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.server_principals"
+                },
+                {
+                  "title": "审计（SQL Audit）",
+                  "versions": "2016+",
+                  "risk": "只读",
+                  "desc": "sys.server_audits"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dameng",
+      "name": "达梦 DM8",
+      "versions": "DM8 / DM8.1",
+      "note": "国产化迁移方向，GCA/YCA 相关",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "实例",
+              "items": [
+                {
+                  "title": "实例状态 / 版本",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "SELECT * FROM V$INSTANCE"
+                },
+                {
+                  "title": "表空间 / 数据文件",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DBA_TABLESPACES"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "缓存命中率 / 内存",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "V$BUFFERPOOL"
+                },
+                {
+                  "title": "统计信息收集",
+                  "versions": "DM8+",
+                  "risk": "谨慎",
+                  "desc": "DBMS_STATS"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top（V$SQL）",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "V$SQL"
+                },
+                {
+                  "title": "执行计划（EXPLAIN）",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DM EXPLAIN"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "阻塞锁 / 会话",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "V$LOCK / V$SESSIONS"
+                },
+                {
+                  "title": "杀会话",
+                  "versions": "DM8+",
+                  "risk": "危险",
+                  "desc": "SP_CLOSE_SESSION"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "表空间使用率",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DBA_DATA_FILES"
+                },
+                {
+                  "title": "大表 Top",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DBA_SEGMENTS"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "全备 / 增量（BACKUP DATABASE）",
+                  "versions": "DM8+",
+                  "risk": "谨慎",
+                  "desc": "DMRMAN"
+                },
+                {
+                  "title": "闪回 / 时间点恢复",
+                  "versions": "DM8+",
+                  "risk": "危险",
+                  "desc": "DMRMAN RESTORE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "DW / DSC",
+              "items": [
+                {
+                  "title": "数据守护（DW）状态",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "V$DMWATCHER"
+                },
+                {
+                  "title": "DSC 集群状态",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "DMASM"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "迁移",
+          "subcategories": [
+            {
+              "name": "迁移",
+              "items": [
+                {
+                  "title": "Oracle → DM 迁移检查清单",
+                  "versions": "DM8+",
+                  "risk": "谨慎",
+                  "desc": "DTS 工具 / 数据类型映射"
+                },
+                {
+                  "title": "兼容性检查（方言差异）",
+                  "versions": "DM8+",
+                  "risk": "只读",
+                  "desc": "NVL/ROWNUM 等"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "oceanbase",
+      "name": "OceanBase",
+      "versions": "3.x / 4.x（MySQL模式 / Oracle模式）",
+      "note": "OBCA 考证中，国产化方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "集群",
+              "items": [
+                {
+                  "title": "集群 / 租户 / Zone 状态",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_server / __all_tenant"
+                },
+                {
+                  "title": "资源单元（Unit）使用",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_unit"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "租户内存 / CPU 使用",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "GV$OB_MEMORY"
+                },
+                {
+                  "title": "缓存 / 合并（Major Compaction）状态",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_zone / 合并进度"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "Top SQL（GV$OB_SQL_AUDIT）",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "SQL Audit"
+                },
+                {
+                  "title": "执行计划（EXPLAIN）",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "MySQL/Oracle模式区分"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "锁 / 会话",
+          "subcategories": [
+            {
+              "name": "锁",
+              "items": [
+                {
+                  "title": "活跃会话 / 阻塞",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "GV$OB_PROCESSLIST"
+                },
+                {
+                  "title": "杀会话（KILL）",
+                  "versions": "4.x",
+                  "risk": "危险",
+                  "desc": "KILL id"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "空间",
+          "subcategories": [
+            {
+              "name": "空间",
+              "items": [
+                {
+                  "title": "表 / 分区大小",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_table"
+                },
+                {
+                  "title": "磁盘使用 / 数据压缩",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_virtual_disk_stat"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "物理备份 / 归档（OB 备份）",
+                  "versions": "4.x",
+                  "risk": "谨慎",
+                  "desc": "BACKUP DATABASE"
+                },
+                {
+                  "title": "闪回 / 时间点恢复",
+                  "versions": "4.x",
+                  "risk": "危险",
+                  "desc": "FLASHBACK / PITR"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "高可用",
+              "items": [
+                {
+                  "title": "多副本 / Paxos 状态",
+                  "versions": "4.x",
+                  "risk": "只读",
+                  "desc": "__all_ls"
+                },
+                {
+                  "title": "主备切换演练",
+                  "versions": "4.x",
+                  "risk": "危险",
+                  "desc": "切换前确认"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "迁移",
+          "subcategories": [
+            {
+              "name": "迁移",
+              "items": [
+                {
+                  "title": "MySQL → OB 迁移清单",
+                  "versions": "4.x",
+                  "risk": "谨慎",
+                  "desc": "OMS 工具"
+                },
+                {
+                  "title": "Oracle → OB 迁移清单",
+                  "versions": "4.x",
+                  "risk": "谨慎",
+                  "desc": "OMS / 数据类型映射"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gbase",
+      "name": "GBase 8a / 8s",
+      "versions": "8a MPP / 8s OLTP",
+      "note": "GBase GCA，国产化方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "集群",
+              "items": [
+                {
+                  "title": "集群节点状态（8a）",
+                  "versions": "8a",
+                  "risk": "只读",
+                  "desc": "gcadmin"
+                },
+                {
+                  "title": "实例状态（8s）",
+                  "versions": "8s",
+                  "risk": "只读",
+                  "desc": "onstat"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "分布键 / 数据倾斜检查（8a）",
+                  "versions": "8a",
+                  "risk": "只读",
+                  "desc": "数据分布"
+                },
+                {
+                  "title": "统计信息 / 优化器",
+                  "versions": "8a",
+                  "risk": "只读",
+                  "desc": "ANALYZE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢SQL Top",
+                  "versions": "8a/8s",
+                  "risk": "只读",
+                  "desc": "系统表 / 日志"
+                },
+                {
+                  "title": "执行计划",
+                  "versions": "8a/8s",
+                  "risk": "只读",
+                  "desc": "EXPLAIN"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "8a 备份（gcbackup）",
+                  "versions": "8a",
+                  "risk": "谨慎",
+                  "desc": "集群备份"
+                },
+                {
+                  "title": "8s 逻辑备份（dbexport）",
+                  "versions": "8s",
+                  "risk": "谨慎",
+                  "desc": "dbexport"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "迁移",
+          "subcategories": [
+            {
+              "name": "迁移",
+              "items": [
+                {
+                  "title": "Oracle/MySQL → GBase 迁移清单",
+                  "versions": "8a/8s",
+                  "risk": "谨慎",
+                  "desc": "迁移工具 / 类型映射"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tidb",
+      "name": "TiDB",
+      "versions": "6.x / 7.x / 8.x",
+      "note": "MySQL 兼容分布式，扩展方向",
+      "categories": [
+        {
+          "name": "日常巡检",
+          "subcategories": [
+            {
+              "name": "集群",
+              "items": [
+                {
+                  "title": "集群状态（tiup cluster display）",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "tiup"
+                },
+                {
+                  "title": "TiKV / PD 状态",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "pd-ctl / Grafana"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "性能优化",
+          "subcategories": [
+            {
+              "name": "性能",
+              "items": [
+                {
+                  "title": "热点 Region 检查",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "INFORMATION_SCHEMA.TIKV_REGION_STATUS"
+                },
+                {
+                  "title": "统计信息 / ANALYZE",
+                  "versions": "6.x+",
+                  "risk": "谨慎",
+                  "desc": "ANALYZE TABLE"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "慢SQL",
+          "subcategories": [
+            {
+              "name": "定位",
+              "items": [
+                {
+                  "title": "慢查询日志 / Top SQL（Dashboard）",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "INFORMATION_SCHEMA.SLOW_QUERY"
+                },
+                {
+                  "title": "EXPLAIN ANALYZE",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "TiDB 执行计划"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "高可用",
+          "subcategories": [
+            {
+              "name": "高可用",
+              "items": [
+                {
+                  "title": "多副本 / Raft 状态",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "PD"
+                },
+                {
+                  "title": "TiFlash 同步延迟",
+                  "versions": "6.x+",
+                  "risk": "只读",
+                  "desc": "TiFlash 副本"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "备份恢复",
+          "subcategories": [
+            {
+              "name": "备份",
+              "items": [
+                {
+                  "title": "BR 全备 / PITR",
+                  "versions": "6.x+",
+                  "risk": "谨慎",
+                  "desc": "br backup / restore"
+                },
+                {
+                  "title": "Dumpling 逻辑备份",
+                  "versions": "6.x+",
+                  "risk": "谨慎",
+                  "desc": "dumpling"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "common",
+      "name": "通用 / 跨库工具",
+      "versions": "全库通用",
+      "note": "不连库的本地工具，uTools 插件 v0.1 已有部分",
+      "categories": [
+        {
+          "name": "SQL 工具",
+          "subcategories": [
+            {
+              "name": "通用",
+              "items": [
+                {
+                  "title": "SQL 格式化（Oracle/MySQL/PG/SQL Server）",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "v0.1 已做"
+                },
+                {
+                  "title": "方言互转 Oracle↔MySQL",
+                  "versions": "全版本",
+                  "risk": "谨慎",
+                  "desc": "v0.1 已做，规则式"
+                },
+                {
+                  "title": "SQL 脱敏",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "v0.1 已做"
+                },
+                {
+                  "title": "列表转 IN / 批量 INSERT",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "v0.1 已做"
+                },
+                {
+                  "title": "时间戳互转",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "v0.1 已做"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "连接与检查",
+          "subcategories": [
+            {
+              "name": "通用",
+              "items": [
+                {
+                  "title": "连接串速查（JDBC / ODBC）",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "各库连接串模板"
+                },
+                {
+                  "title": "端口 / 连通性检查",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "telnet / nc 模板"
+                },
+                {
+                  "title": "字符集 / 时区检查",
+                  "versions": "全版本",
+                  "risk": "只读",
+                  "desc": "各库字符集查询"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "NoSQL（第二期）",
+          "subcategories": [
+            {
+              "name": "Redis / Mongo",
+              "items": [
+                {
+                  "title": "Redis 常用命令（INFO / SLOWLOG / 内存）",
+                  "versions": "6.x/7.x",
+                  "risk": "只读",
+                  "desc": "二期"
+                },
+                {
+                  "title": "MongoDB 慢查询 / 索引",
+                  "versions": "6.x/7.x",
+                  "risk": "只读",
+                  "desc": "二期"
+                },
+                {
+                  "title": "SQLite 常用命令",
+                  "versions": "3.x",
+                  "risk": "只读",
+                  "desc": "二期"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

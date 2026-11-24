@@ -1,0 +1,7 @@
+-- 多副本 / Raft 状态
+-- 适用版本：6.x+
+-- 风险：只读
+-- 说明：PD
+-- 备注：TIKV_STORE_STATUS 的列名需在 TiDB 6.x+ 实测核对，副本详情以 PD/Dashboard 为准。
+
+SELECT STORE_ID, ADDRESS, STATE, REGION_COUNT, LEADER_COUNT FROM INFORMATION_SCHEMA.TIKV_STORE_STATUS ORDER BY STORE_ID LIMIT 20;

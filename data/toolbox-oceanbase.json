@@ -1,0 +1,251 @@
+{
+  "id": "oceanbase",
+  "name": "OceanBase",
+  "versions": "3.x / 4.x（MySQL模式 / Oracle模式）",
+  "note": "OBCA 考证中，国产化方向",
+  "categories": [
+    {
+      "name": "日常巡检",
+      "subcategories": [
+        {
+          "name": "集群",
+          "items": [
+            {
+              "title": "集群 / 租户 / Zone 状态",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "__all_server / __all_tenant",
+              "sql": "SELECT SVR_IP, SVR_PORT, ZONE, STATUS FROM oceanbase.__all_server ORDER BY ZONE, SVR_IP LIMIT 20;\nSELECT TENANT_ID, TENANT_NAME, CREATE_TIME FROM oceanbase.__all_tenant LIMIT 20;",
+              "params": [],
+              "notes": "MySQL 模式用以上查询，Oracle 模式需改写为对应字典视图，需在 OB 4.x 实测核对。"
+            },
+            {
+              "title": "资源单元（Unit）使用",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "__all_unit",
+              "sql": "SELECT UNIT_ID, TENANT_ID, ZONE, SVR_IP, MAX_CPU, MIN_CPU, MEMORY_SIZE/1024/1024 AS MEMORY_MB, STATUS\nFROM oceanbase.__all_unit\nORDER BY TENANT_ID, ZONE LIMIT 20;",
+              "params": [],
+              "notes": "__all_unit 的内存单位与列名需在 OB 4.x 实测核对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "性能优化",
+      "subcategories": [
+        {
+          "name": "性能",
+          "items": [
+            {
+              "title": "租户内存 / CPU 使用",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "GV$OB_MEMORY",
+              "sql": "SELECT TENANT_ID, SVR_IP, HOLD AS MEMORY_HOLD_BYTES, USED AS MEMORY_USED_BYTES\nFROM oceanbase.GV$OB_MEMORY\nORDER BY USED DESC LIMIT 20;",
+              "params": [],
+              "notes": "GV$OB_MEMORY 的列名（HOLD/USED）需在 OB 4.x 实测核对，Oracle 模式查询方式不同。"
+            },
+            {
+              "title": "缓存 / 合并（Major Compaction）状态",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "__all_zone / 合并进度",
+              "sql": "SELECT ZONE, STATUS, START_TIME FROM oceanbase.__all_zone LIMIT 20;\n-- 合并进度以 OCP / obdiag 或 __all_virtual_merge_info 为准，视图名按版本不同：\n-- 需在 OB 4.x 实测核对合并进度视图名后再查，不要硬编列名。",
+              "params": [],
+              "notes": "合并进度视图名在 OB 3.x/4.x 间有变化，需在 OB 4.x 实测核对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "慢SQL",
+      "subcategories": [
+        {
+          "name": "定位",
+          "items": [
+            {
+              "title": "Top SQL（GV$OB_SQL_AUDIT）",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "SQL Audit",
+              "sql": "SELECT SQL_ID, SQL_TEXT, ELAPSED_TIME, EXECUTIONS\nFROM oceanbase.GV$OB_SQL_AUDIT\nWHERE ELAPSED_TIME > 0\nORDER BY ELAPSED_TIME DESC LIMIT 20;",
+              "params": [],
+              "notes": "MySQL 模式用 LIMIT 20，Oracle 模式用 FETCH FIRST 20 ROWS ONLY，GV$OB_SQL_AUDIT 列名需在 OB 4.x 实测核对。"
+            },
+            {
+              "title": "执行计划（EXPLAIN）",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "MySQL/Oracle模式区分",
+              "sql": "EXPLAIN SELECT * FROM <TABLE> WHERE <CONDITION>;",
+              "params": [
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                },
+                {
+                  "name": "CONDITION",
+                  "desc": "WHERE 条件"
+                }
+              ],
+              "notes": "MySQL 模式用 EXPLAIN，Oracle 模式用 EXPLAIN PLAN FOR，需按租户模式区分。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "锁 / 会话",
+      "subcategories": [
+        {
+          "name": "锁",
+          "items": [
+            {
+              "title": "活跃会话 / 阻塞",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "GV$OB_PROCESSLIST",
+              "sql": "SELECT ID, USER, HOST, DB, COMMAND, TIME, STATE, INFO\nFROM oceanbase.GV$OB_PROCESSLIST\nWHERE COMMAND != 'Sleep'\nORDER BY TIME DESC LIMIT 20;",
+              "params": [],
+              "notes": "GV$OB_PROCESSLIST 列名需在 OB 4.x 实测核对，MySQL 模式与 Oracle 模式字段不同。"
+            },
+            {
+              "title": "杀会话（KILL）",
+              "versions": "4.x",
+              "risk": "危险",
+              "desc": "KILL id",
+              "sql": "-- 1. 先确认（只读查询）：\nSELECT ID, USER, HOST, COMMAND, TIME, INFO FROM oceanbase.GV$OB_PROCESSLIST WHERE ID = <ID>;\n-- 2. 确认无误后再执行（危险）：\n-- DANGER: KILL <ID>;",
+              "params": [
+                {
+                  "name": "ID",
+                  "desc": "会话 ID"
+                }
+              ],
+              "notes": "OB 的 KILL 语法与 MySQL 兼容，Oracle 模式需按租户模式核对，杀会话前务必确认业务影响。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "空间",
+      "subcategories": [
+        {
+          "name": "空间",
+          "items": [
+            {
+              "title": "表 / 分区大小",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "__all_table",
+              "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, ROUND(DATA_LENGTH/1024/1024, 2) AS DATA_MB, ROUND(INDEX_LENGTH/1024/1024, 2) AS INDEX_MB, TABLE_ROWS\nFROM INFORMATION_SCHEMA.TABLES\nWHERE TABLE_SCHEMA NOT IN ('information_schema','mysql','oceanbase','sys')\nORDER BY DATA_LENGTH DESC LIMIT 20;",
+              "params": [],
+              "notes": "MySQL 模式用 INFORMATION_SCHEMA.TABLES，Oracle 模式用 DBA_SEGMENTS/DBA_TABLES，需按租户模式区分。"
+            },
+            {
+              "title": "磁盘使用 / 数据压缩",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "__all_virtual_disk_stat",
+              "sql": "SELECT SVR_IP, TOTAL_SIZE/1024/1024/1024 AS TOTAL_GB, USED_SIZE/1024/1024/1024 AS USED_GB\nFROM oceanbase.__all_virtual_disk_stat LIMIT 20;",
+              "params": [],
+              "notes": "__all_virtual_disk_stat 的列名需在 OB 4.x 实测核对，如无该视图请改用 OCP 磁盘监控。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "备份恢复",
+      "subcategories": [
+        {
+          "name": "备份",
+          "items": [
+            {
+              "title": "物理备份 / 归档（OB 备份）",
+              "versions": "4.x",
+              "risk": "谨慎",
+              "desc": "BACKUP DATABASE",
+              "sql": "-- 需先在 OCP / SQL 中配置备份目的端（OSS/NFS 等），再执行：\n-- ALTER SYSTEM SET BACKUP_DEST='file:///obbackup';\n-- ALTER SYSTEM BACKUP DATABASE;",
+              "params": [],
+              "notes": "OB 物理备份语法与备份目的端配置需在 OB 4.x 实测核对，备份前确认归档已开启。"
+            },
+            {
+              "title": "闪回 / 时间点恢复",
+              "versions": "4.x",
+              "risk": "危险",
+              "desc": "FLASHBACK / PITR",
+              "sql": "-- 1. 先确认备份与归档（只读）：\n-- ALTER SYSTEM SHOW BACKUP STATUS;\n-- 2. 时间点恢复为危险操作，先在测试租户演练：\n-- DANGER: Oracle 模式：FLASHBACK TABLE <TABLE> TO TIMESTAMP TO_TIMESTAMP('2026-11-24 10:00:00','YYYY-MM-DD HH24:MI:SS');\n-- DANGER: MySQL 模式无 FLASHBACK TABLE，需用备份+PITR 恢复到新租户，语法按 OB 4.x 核对。",
+              "params": [
+                {
+                  "name": "TABLE",
+                  "desc": "表名"
+                }
+              ],
+              "notes": "OB 的闪回能力按租户模式差异很大，MySQL 模式不支持 Oracle 式闪回，需在 OB 4.x 实测核对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "高可用",
+      "subcategories": [
+        {
+          "name": "高可用",
+          "items": [
+            {
+              "title": "多副本 / Paxos 状态",
+              "versions": "4.x",
+              "risk": "只读",
+              "desc": "__all_ls",
+              "sql": "SELECT LS_ID, TENANT_ID, SVR_IP, ROLE, STATUS FROM oceanbase.__all_ls ORDER BY TENANT_ID, LS_ID LIMIT 20;",
+              "params": [],
+              "notes": "__all_ls 的列名需在 OB 4.x 实测核对，副本角色以 OCP 展示为准。"
+            },
+            {
+              "title": "主备切换演练",
+              "versions": "4.x",
+              "risk": "危险",
+              "desc": "切换前确认",
+              "sql": "-- 1. 先确认主备租户与日志同步（只读）：\nSELECT TENANT_ID, LS_ID, SVR_IP, ROLE FROM oceanbase.__all_ls ORDER BY TENANT_ID LIMIT 20;\n-- 2. 切换为危险操作，演练前停写确认：\n-- DANGER: 切换命令按 OB 4.x 主备租户方案执行（OCP 切换或 ALTER SYSTEM 切换），不要直接套用 Oracle DG 命令。",
+              "params": [],
+              "notes": "OB 主备切换与 Oracle DG 完全不同，命令需在 OB 4.x 实测核对，演练前务必停写确认。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "迁移",
+      "subcategories": [
+        {
+          "name": "迁移",
+          "items": [
+            {
+              "title": "MySQL → OB 迁移清单",
+              "versions": "4.x",
+              "risk": "谨慎",
+              "desc": "OMS 工具",
+              "sql": "-- 迁移前检查（只读，MySQL 模式）：\nSELECT TABLE_SCHEMA, COUNT(*) AS TABLE_CNT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','mysql','sys') GROUP BY TABLE_SCHEMA ORDER BY TABLE_CNT DESC LIMIT 20;\nSELECT TABLE_SCHEMA, TABLE_NAME, ENGINE FROM INFORMATION_SCHEMA.TABLES WHERE ENGINE NOT IN ('InnoDB') LIMIT 20;",
+              "params": [],
+              "notes": "迁移以 OMS 工具为准，存储引擎、字符集、自增列需逐项核对。"
+            },
+            {
+              "title": "Oracle → OB 迁移清单",
+              "versions": "4.x",
+              "risk": "谨慎",
+              "desc": "OMS / 数据类型映射",
+              "sql": "-- 迁移前检查（只读，Oracle 模式）：\nSELECT OWNER, OBJECT_TYPE, COUNT(*) AS CNT FROM DBA_OBJECTS GROUP BY OWNER, OBJECT_TYPE ORDER BY CNT DESC FETCH FIRST 20 ROWS ONLY;\n-- 需在 OB 4.x 实测核对 DBA_OBJECTS 在 Oracle 模式下的可用性，数据类型映射以 OMS 评估报告为准。",
+              "params": [],
+              "notes": "迁移以 OMS 工具为准，序列、同义词、存储过程等对象需逐项核对。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

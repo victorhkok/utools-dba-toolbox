@@ -1,0 +1,11 @@
+-- XtraBackup 全备 / 增量
+-- 适用版本：5.7+
+-- 风险：谨慎
+-- 说明：xtrabackup --backup
+-- 大类：备份恢复 / 小类：物理备份
+-- shell: 全备
+-- xtrabackup --backup --target-dir="<base_dir>" -u <user> -p
+-- shell: 增量（基于全备目录）
+-- xtrabackup --backup --target-dir="<inc_dir>" --incremental-basedir="<base_dir>" -u <user> -p
+-- 备份后检查：
+SHOW BINARY LOGS;

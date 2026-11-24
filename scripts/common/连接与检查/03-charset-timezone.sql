@@ -1,0 +1,12 @@
+-- 字符集 / 时区检查
+-- 适用版本：全版本
+-- 风险：只读
+-- 说明：各库字符集查询
+-- 备注：各库字符集查询语法不同，达梦条需在 DM8 实测核对。
+
+-- Oracle: SELECT * FROM NLS_DATABASE_PARAMETERS WHERE PARAMETER IN ('NLS_CHARACTERSET','NLS_NCHAR_CHARACTERSET');
+-- MySQL: SHOW VARIABLES LIKE 'character_set%'; SHOW VARIABLES LIKE 'time_zone';
+-- PostgreSQL: SHOW server_encoding; SHOW timezone;
+-- SQL Server: SELECT SERVERPROPERTY('Collation');
+-- 达梦: SELECT * FROM V$PARAMETER WHERE NAME LIKE '%CHARSET%';
+-- TiDB: SHOW VARIABLES LIKE 'character_set%';
