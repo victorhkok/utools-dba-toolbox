@@ -17,7 +17,8 @@
               "desc": "@@VERSION / sys.dm_os_sys_info",
               "sql": "SELECT @@VERSION AS version;\nSELECT SERVERPROPERTY('Edition') AS edition,\n       SERVERPROPERTY('ProductVersion') AS product_version,\n       SERVERPROPERTY('ProductLevel') AS product_level;\nSELECT cpu_count, physical_memory_kb / 1024 / 1024 AS physical_memory_gb,\n       sqlserver_start_time, virtual_machine_type_desc\nFROM sys.dm_os_sys_info;",
               "params": [],
-              "notes": "@@VERSION 看版本，sys.dm_os_sys_info 看 CPU/内存和启动时间。"
+              "notes": "@@VERSION 看版本，sys.dm_os_sys_info 看 CPU/内存和启动时间。",
+              "id": "sqlserver-001"
             },
             {
               "title": "连接 / 作业（Agent Job）状态",
@@ -26,7 +27,8 @@
               "desc": "msdb.dbo.sysjobs",
               "sql": "SELECT login_name, host_name, program_name, count(*) AS session_count\nFROM sys.dm_exec_sessions\nWHERE is_user_process = 1\nGROUP BY login_name, host_name, program_name\nORDER BY session_count DESC;\nSELECT TOP 20 j.name AS job_name, j.enabled,\n       ja.run_requested_date, ja.stop_execution_date\nFROM msdb.dbo.sysjobs AS j\nLEFT JOIN msdb.dbo.sysjobactivity AS ja\n  ON ja.job_id = j.job_id\nORDER BY j.name;",
               "params": [],
-              "notes": "sys.dm_exec_sessions 只看用户会话，作业状态在 msdb 的 sysjobs/sysjobactivity。"
+              "notes": "sys.dm_exec_sessions 只看用户会话，作业状态在 msdb 的 sysjobs/sysjobactivity。",
+              "id": "sqlserver-002"
             }
           ]
         }
@@ -45,7 +47,8 @@
               "desc": "sys.dm_os_performance_counters",
               "sql": "SELECT object_name, counter_name, cntr_value\nFROM sys.dm_os_performance_counters\nWHERE counter_name IN ('Buffer cache hit ratio',\n                       'Buffer cache hit ratio base',\n                       'Page life expectancy',\n                       'Total Server Memory (KB)',\n                       'Target Server Memory (KB)')\nORDER BY object_name, counter_name;\nSELECT physical_memory_kb / 1024 AS physical_memory_mb,\n       virtual_memory_kb / 1024 AS virtual_memory_mb\nFROM sys.dm_os_sys_info;",
               "params": [],
-              "notes": "Buffer cache hit ratio 要除以同名的 base 计数器再乘 100，单看 cntr_value 不准。"
+              "notes": "Buffer cache hit ratio 要除以同名的 base 计数器再乘 100，单看 cntr_value 不准。",
+              "id": "sqlserver-003"
             },
             {
               "title": "缺失索引 DMV",
@@ -54,7 +57,8 @@
               "desc": "sys.dm_db_missing_index_details",
               "sql": "SELECT TOP 20\n       migs.avg_total_user_cost * migs.avg_user_impact\n         * (migs.user_seeks + migs.user_scans) AS improvement_measure,\n       mid.statement AS table_name,\n       mid.equality_columns, mid.inequality_columns, mid.included_columns\nFROM sys.dm_db_missing_index_groups AS mig\nINNER JOIN sys.dm_db_missing_index_group_stats AS migs\n  ON migs.group_handle = mig.index_group_handle\nINNER JOIN sys.dm_db_missing_index_details AS mid\n  ON mig.index_handle = mid.index_handle\nORDER BY improvement_measure DESC;",
               "params": [],
-              "notes": "DMV 只给建议，建索引前要核对表大小、写比例和已有索引，避免重复建。"
+              "notes": "DMV 只给建议，建索引前要核对表大小、写比例和已有索引，避免重复建。",
+              "id": "sqlserver-004"
             },
             {
               "title": "统计信息过期",
@@ -63,7 +67,8 @@
               "desc": "sys.stats",
               "sql": "SELECT TOP 20\n       OBJECT_NAME(s.object_id) AS table_name,\n       s.name AS stats_name, s.auto_created, s.user_created,\n       STATS_DATE(s.object_id, s.stats_id) AS last_updated,\n       p.modification_counter, p.rows, p.rows_sampled\nFROM sys.stats AS s\nCROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) AS p\nORDER BY last_updated ASC;",
               "params": [],
-              "notes": "modification_counter 大且 last_updated 很旧，说明统计信息过期，UPDATE STATISTICS 前先评估。"
+              "notes": "modification_counter 大且 last_updated 很旧，说明统计信息过期，UPDATE STATISTICS 前先评估。",
+              "id": "sqlserver-005"
             }
           ]
         }
@@ -82,7 +87,8 @@
               "desc": "sys.query_store_runtime_stats",
               "sql": "-- 前置：Query Store 需开启，查 sys.database_query_store_options 确认\nSELECT state_desc FROM sys.database_query_store_options;\nSELECT TOP 20\n       q.query_id,\n       LEFT(qt.query_sql_text, 200) AS query_text,\n       rs.avg_duration AS avg_duration_us,\n       rs.count_executions,\n       rs.avg_cpu_time, rs.avg_logical_io_reads\nFROM sys.query_store_query AS q\nJOIN sys.query_store_query_text AS qt\n  ON qt.query_text_id = q.query_text_id\nJOIN sys.query_store_plan AS p\n  ON p.query_id = q.query_id\nJOIN sys.query_store_runtime_stats AS rs\n  ON rs.plan_id = p.plan_id\nORDER BY rs.avg_duration DESC;",
               "params": [],
-              "notes": "Query Store 需先开启（ALTER DATABASE SET QUERY_STORE = ON），没开时这些视图是空的。"
+              "notes": "Query Store 需先开启（ALTER DATABASE SET QUERY_STORE = ON），没开时这些视图是空的。",
+              "id": "sqlserver-006"
             },
             {
               "title": "最耗 CPU / IO 的查询",
@@ -91,7 +97,8 @@
               "desc": "sys.dm_exec_query_stats",
               "sql": "SELECT TOP 20\n       qs.total_worker_time / 1000 AS total_cpu_ms,\n       qs.total_logical_reads, qs.total_logical_writes,\n       qs.execution_count,\n       SUBSTRING(st.text, (qs.statement_start_offset / 2) + 1,\n         ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text)\n           ELSE qs.statement_end_offset END - qs.statement_start_offset) / 2) + 1) AS query_text\nFROM sys.dm_exec_query_stats AS qs\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st\nORDER BY qs.total_worker_time DESC;",
               "params": [],
-              "notes": "dm_exec_query_stats 是缓存累计值，重启/缓存清理后会清零，对比要看 execution_count。"
+              "notes": "dm_exec_query_stats 是缓存累计值，重启/缓存清理后会清零，对比要看 execution_count。",
+              "id": "sqlserver-007"
             },
             {
               "title": "执行计划（实际 vs 预估）",
@@ -102,7 +109,8 @@
               "params": [
                 "plan_handle"
               ],
-              "notes": "DMV 给的是缓存的预估计划，真实执行耗时要看 SSMS 的实际执行计划。"
+              "notes": "DMV 给的是缓存的预估计划，真实执行耗时要看 SSMS 的实际执行计划。",
+              "id": "sqlserver-008"
             }
           ]
         }
@@ -121,7 +129,8 @@
               "desc": "blocking_session_id",
               "sql": "SELECT TOP 20\n       r.session_id, r.blocking_session_id, r.wait_type, r.wait_time,\n       r.status, r.command,\n       SUBSTRING(t.text, (r.statement_start_offset / 2) + 1,\n         ((CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(t.text)\n           ELSE r.statement_end_offset END - r.statement_start_offset) / 2) + 1) AS query_text\nFROM sys.dm_exec_requests AS r\nCROSS APPLY sys.dm_exec_sql_text(r.sql_handle) AS t\nWHERE r.blocking_session_id <> 0\nORDER BY r.wait_time DESC;",
               "params": [],
-              "notes": "blocking_session_id 是直接阻塞者，链的根因要顺着 blocking_session_id 往上追。"
+              "notes": "blocking_session_id 是直接阻塞者，链的根因要顺着 blocking_session_id 往上追。",
+              "id": "sqlserver-009"
             },
             {
               "title": "死锁图（Extended Events）",
@@ -130,7 +139,8 @@
               "desc": "xml_deadlock_report",
               "sql": "SELECT CAST(xet.target_data AS XML) AS xe_data\nFROM sys.dm_xe_session_targets AS xet\nJOIN sys.dm_xe_sessions AS xe\n  ON xe.address = xet.event_session_address\nWHERE xe.name = 'system_health'\n  AND xet.target_name = 'ring_buffer';\n-- 在返回的 XML 里找 xml_deadlock_report 事件；也可以在 SSMS 的扩展事件里直接看 system_health",
               "params": [],
-              "notes": "死锁图在 system_health 会话的 ring_buffer 里，XML 需解析 xml_deadlock_report 事件。"
+              "notes": "死锁图在 system_health 会话的 ring_buffer 里，XML 需解析 xml_deadlock_report 事件。",
+              "id": "sqlserver-010"
             },
             {
               "title": "KILL 会话",
@@ -141,7 +151,8 @@
               "params": [
                 "spid"
               ],
-              "notes": "KILL 前先确认 spid、登录名和正在跑的命令，杀掉后事务要回滚。"
+              "notes": "KILL 前先确认 spid、登录名和正在跑的命令，杀掉后事务要回滚。",
+              "id": "sqlserver-011"
             }
           ]
         }
@@ -160,7 +171,8 @@
               "desc": "sys.database_files",
               "sql": "SELECT TOP 20\n       DB_NAME(database_id) AS db_name, name AS file_name,\n       type_desc, size * 8 / 1024 AS size_mb,\n       max_size * 8 / 1024 AS max_size_mb\nFROM sys.master_files\nORDER BY size DESC;\nSELECT TOP 20\n       name AS file_name, type_desc, size * 8 / 1024 AS size_mb,\n       growth, is_percent_growth\nFROM sys.database_files\nORDER BY size DESC;",
               "params": [],
-              "notes": "sys.master_files 看所有库，sys.database_files 只看当前库，size 单位是 8KB 页。"
+              "notes": "sys.master_files 看所有库，sys.database_files 只看当前库，size 单位是 8KB 页。",
+              "id": "sqlserver-012"
             },
             {
               "title": "日志文件增长 / VLF",
@@ -169,7 +181,8 @@
               "desc": "DBCC LOGINFO",
               "sql": "SELECT name AS file_name, type_desc, size * 8 / 1024 AS size_mb,\n       growth, is_percent_growth\nFROM sys.database_files\nWHERE type_desc = 'LOG';\nDBCC LOGINFO;\n-- 2017+ 也可用：SELECT * FROM sys.dm_db_log_info(DB_ID());",
               "params": [],
-              "notes": "DBCC LOGINFO 看 VLF 数量和状态，VLF 过多会影响日志恢复速度；2017+ 可用 dm_db_log_info。"
+              "notes": "DBCC LOGINFO 看 VLF 数量和状态，VLF 过多会影响日志恢复速度；2017+ 可用 dm_db_log_info。",
+              "id": "sqlserver-013"
             }
           ]
         }
@@ -191,7 +204,8 @@
                 "db_name",
                 "backup_path"
               ],
-              "notes": "日志备份要求数据库是完整/大容量日志恢复模式，简单模式下 BACKUP LOG 会报错。"
+              "notes": "日志备份要求数据库是完整/大容量日志恢复模式，简单模式下 BACKUP LOG 会报错。",
+              "id": "sqlserver-014"
             },
             {
               "title": "STOPAT 时间点恢复",
@@ -205,7 +219,8 @@
                 "full_backup_path",
                 "log_backup_path"
               ],
-              "notes": "STOPAT 恢复要按全备→日志备顺序还原，时间点必须落在日志备份覆盖范围内。"
+              "notes": "STOPAT 恢复要按全备→日志备顺序还原，时间点必须落在日志备份覆盖范围内。",
+              "id": "sqlserver-015"
             },
             {
               "title": "备份历史检查",
@@ -214,7 +229,8 @@
               "desc": "msdb.dbo.backupset",
               "sql": "SELECT TOP 20\n       bs.database_name, bs.type, bs.backup_start_date, bs.backup_finish_date,\n       bs.backup_size / 1024 / 1024 AS backup_size_mb,\n       bmf.physical_device_name\nFROM msdb.dbo.backupset AS bs\nJOIN msdb.dbo.backupmediafamily AS bmf\n  ON bs.media_set_id = bmf.media_set_id\nORDER BY bs.backup_finish_date DESC;",
               "params": [],
-              "notes": "type D=完整、I=差异、L=日志，恢复前先确认最近一次全备和日志备的时间。"
+              "notes": "type D=完整、I=差异、L=日志，恢复前先确认最近一次全备和日志备的时间。",
+              "id": "sqlserver-016"
             }
           ]
         }
@@ -233,7 +249,8 @@
               "desc": "sys.dm_hadr_availability_replica_states",
               "sql": "SELECT ar.replica_server_name, ars.role_desc,\n       ars.availability_mode_desc, ars.synchronization_health_desc,\n       ars.last_commit_time,\n       DATEDIFF(SECOND, ars.last_commit_time, GETDATE()) AS lag_seconds\nFROM sys.dm_hadr_availability_replica_states AS ars\nJOIN sys.availability_replicas AS ar\n  ON ars.replica_id = ar.replica_id\nORDER BY ars.role_desc;\nSELECT TOP 20\n       DB_NAME(database_id) AS db_name,\n       log_send_queue_size, redo_queue_size, last_commit_time\nFROM sys.dm_hadr_database_replica_states\nORDER BY log_send_queue_size DESC;",
               "params": [],
-              "notes": "同步延迟看 log_send_queue_size 和 redo_queue_size，健康状态看 synchronization_health_desc。"
+              "notes": "同步延迟看 log_send_queue_size 和 redo_queue_size，健康状态看 synchronization_health_desc。",
+              "id": "sqlserver-017"
             },
             {
               "title": "故障转移演练清单",
@@ -244,7 +261,8 @@
               "params": [
                 "ag_name"
               ],
-              "notes": "手动故障转移要求目标副本同步且健康，异步副本切换可能丢数据。"
+              "notes": "手动故障转移要求目标副本同步且健康，异步副本切换可能丢数据。",
+              "id": "sqlserver-018"
             }
           ]
         }
@@ -263,7 +281,8 @@
               "desc": "sys.server_principals",
               "sql": "SELECT TOP 20 name, type_desc, is_disabled, create_date\nFROM sys.server_principals\nWHERE type IN ('S', 'U', 'G')\nORDER BY name;\nSELECT TOP 20\n       dp.name AS user_name, dp.type_desc,\n       dr.name AS role_name\nFROM sys.database_principals AS dp\nLEFT JOIN sys.database_role_members AS drm\n  ON drm.member_principal_id = dp.principal_id\nLEFT JOIN sys.database_principals AS dr\n  ON dr.principal_id = drm.role_principal_id\nORDER BY dp.name, dr.name;",
               "params": [],
-              "notes": "server_principals 是服务器登录名，database_principals 是库内用户，两者要分开查。"
+              "notes": "server_principals 是服务器登录名，database_principals 是库内用户，两者要分开查。",
+              "id": "sqlserver-019"
             },
             {
               "title": "审计（SQL Audit）",
@@ -272,7 +291,8 @@
               "desc": "sys.server_audits",
               "sql": "SELECT name, is_state_enabled, type_desc, create_date\nFROM sys.server_audits\nORDER BY name;\nSELECT audit_id, name, status_desc, status_time\nFROM sys.dm_server_audit_status;",
               "params": [],
-              "notes": "server_audits 看审计定义，dm_server_audit_status 看审计当前是否在运行。"
+              "notes": "server_audits 看审计定义，dm_server_audit_status 看审计当前是否在运行。",
+              "id": "sqlserver-020"
             }
           ]
         }

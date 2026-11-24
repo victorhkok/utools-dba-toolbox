@@ -23,17 +23,60 @@
   .warn{margin:0 16px 14px;color:#f5b544;font-size:12px;line-height:1.6;white-space:pre-wrap}
   .hint{margin:0 16px 14px;color:#8b9096;font-size:12px;line-height:1.6}
   .ok{color:#4ade80}
+  input[type=text]{background:#0f1114;color:#e6e8eb;border:1px solid #2c3038;border-radius:8px;padding:8px 10px;font-size:13px;flex:1;min-width:160px}
+  .tb-wrap{display:none;padding:0 16px 14px}
+  .tb-wrap.show{display:block}
+  .tb-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .tb-bar select{flex:0 0 auto}
+  .tb-count{color:#8b9096;font-size:12px;align-self:center}
+  .tb-pane{display:flex;gap:10px;height:380px}
+  .tb-list{flex:0 0 42%;overflow:auto;border:1px solid #2c3038;border-radius:8px;background:#0f1114}
+  .tb-item{padding:9px 10px;border-bottom:1px solid #1e2126;cursor:pointer}
+  .tb-item:hover{background:#1a1d22}
+  .tb-item.active{background:#1e2a44}
+  .tb-item .t{font-size:13px;line-height:1.4}
+  .tb-item .m{color:#8b9096;font-size:11px;margin-top:3px}
+  .badge{display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;margin-left:6px}
+  .badge.readonly{background:#12351f;color:#4ade80}
+  .badge.caution{background:#3d2f10;color:#f5b544}
+  .badge.danger{background:#3d1414;color:#f87171}
+  .tb-detail{flex:1;overflow:auto;border:1px solid #2c3038;border-radius:8px;background:#0f1114;padding:12px}
+  .tb-detail h3{margin:0 0 6px;font-size:14px}
+  .tb-detail .meta{color:#8b9096;font-size:12px;line-height:1.7;margin-bottom:8px}
+  .tb-detail pre{margin:8px 0;min-height:80px;max-height:220px;border:none;padding:0;background:transparent}
+  .tb-detail .notes{color:#f5b544;font-size:12px;line-height:1.6;white-space:pre-wrap}
 </style>
 </head>
 <body>
-<header><h1>🛢️ DBA SQL 工具</h1><span class="sub">v0.1 · 本地运行，不联网 · Oracle / MySQL 优先</span></header>
+<header><h1>🛢️ DBA SQL 工具</h1><span class="sub">v0.2 · 本地运行，不联网 · 脚本库 215 条</span></header>
 <div class="tabs" id="tabs">
   <div class="tab active" data-tab="format">格式化</div>
   <div class="tab" data-tab="convert">方言互转</div>
   <div class="tab" data-tab="desens">脱敏</div>
   <div class="tab" data-tab="listin">列表转 IN</div>
   <div class="tab" data-tab="ts">时间戳</div>
+  <div class="tab" data-tab="toolbox">脚本库 · 215</div>
 </div>
+
+<div class="tb-wrap" id="toolboxView">
+  <div class="tb-bar">
+    <input type="text" id="tbSearch" placeholder="搜标题 / 关键词，如：慢SQL、AWR、表空间、RMAN、锁…">
+    <select id="tbDb"><option value="all">全部数据库</option></select>
+    <select id="tbCat"><option value="all">全部分类</option></select>
+    <select id="tbRisk"><option value="all">全部风险</option><option value="只读">只读</option><option value="谨慎">谨慎</option><option value="危险">危险</option></select>
+    <span class="tb-count" id="tbCount"></span>
+  </div>
+  <div class="tb-pane">
+    <div class="tb-list" id="tbList"></div>
+    <div class="tb-detail" id="tbDetail"><p style="color:#8b9096">在左侧选一条脚本，这里显示完整 SQL，点「复制 SQL」直接粘贴到客户端用。<br><br>危险操作只给模板，执行前先看黄色提醒。</p></div>
+  </div>
+  <div class="btns" style="padding:12px 0 0">
+    <button id="tbCopy">复制 SQL</button>
+    <button class="ghost" id="tbCopyHide">复制并关闭</button>
+  </div>
+</div>
+
+<div id="toolsView">
 
 <div class="row">
   <label>方言 <select id="dialect"><option value="oracle">Oracle</option><option value="mysql">MySQL</option><option value="postgres">PostgreSQL</option><option value="sqlserver">SQL Server</option></select></label>
@@ -54,7 +97,8 @@
 
 <pre id="output">结果会显示在这里</pre>
 <div class="warn" id="warn"></div>
-<div class="hint" id="hint">用法：Alt+空格 输入「SQL格式化」打开；或选中 SQL 后鼠标中键呼出超级面板选「格式化这段 SQL」；也可以直接把 SQL 粘贴进 uTools 输入框匹配。</div>
+<div class="hint" id="hint">用法：Alt+空格 输入「SQL格式化」打开；或选中 SQL 后鼠标中键呼出超级面板选「格式化这段 SQL」；也可以直接把 SQL 粘贴进 uTools 输入框匹配。脚本库：输入「DBA工具箱」打开，搜标题或关键词。</div>
+</div>
 
 <script src="./lib/sql-core.js"></script>
 <script>
@@ -93,8 +137,12 @@
     el.onclick=function(){
       document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')});
       el.classList.add('active'); tab=el.dataset.tab;
+      var isTb = tab==='toolbox';
+      $('toolboxView').classList.toggle('show', isTb);
+      $('toolsView').style.display = isTb ? 'none' : 'block';
+      if (isTb) { initToolbox(); return; }
       $('convertRow').style.display = tab==='convert' ? 'flex':'none';
-      $('hint').textContent = tab==='convert' ? 'v0.1 只做 Oracle <-> MySQL 规则互转，不是完整转译，上线前务必在测试库跑一遍。'
+      $('hint').textContent = tab==='convert' ? '只做 Oracle <-> MySQL 规则互转，不是完整转译，上线前务必在测试库跑一遍。'
         : tab==='desens' ? '脱敏：字符串 → ***，数字 → ?，适合贴慢日志 / 执行计划求助。'
         : tab==='listin' ? '每行一个值，或逗号分隔。Oracle IN 超过 1000 个会报 ORA-01795。'
         : tab==='ts' ? '支持 10 位秒 / 13 位毫秒时间戳，或 YYYY-MM-DD HH:mm:ss 互转。'
@@ -102,6 +150,116 @@
       run();
     };
   });
+
+  // ---- Toolbox: 215 scripts search ----
+  var tbItems=[], tbSelected=null, tbLoaded=false;
+  function tbFlatten(data){
+    var out=[];
+    (data.databases||[]).forEach(function(db){
+      (db.categories||[]).forEach(function(cat){
+        (cat.subcategories||[]).forEach(function(sub){
+          (sub.items||[]).forEach(function(it){
+            out.push({id:it.id, db:db.id, dbName:db.name, dbVersions:db.versions, category:cat.name, subcategory:sub.name,
+              title:it.title, versions:it.versions, risk:it.risk, desc:it.desc||'',
+              sql:it.sql||'', params:it.params||[], notes:it.notes||''});
+          });
+        });
+      });
+    });
+    return out;
+  }
+  function tbLoad(){
+    if (tbLoaded) return Promise.resolve(tbItems);
+    // Prefer preload (Node fs, works in uTools file://); fallback to fetch for browser preview
+    if (window.services && window.services.loadToolbox) {
+      try { tbItems = tbFlatten(window.services.loadToolbox()); tbLoaded = true; return Promise.resolve(tbItems); } catch(e){}
+    }
+    return fetch('./data/toolbox-filled.json').then(function(r){ return r.json(); }).then(function(d){
+      tbItems = tbFlatten(d); tbLoaded = true; return tbItems;
+    }).catch(function(){ tbItems=[]; tbLoaded=true; return tbItems; });
+  }
+  function tbRiskBadge(r){
+    var cls = r==='只读' ? 'readonly' : r==='谨慎' ? 'caution' : 'danger';
+    return '<span class="badge '+cls+'">'+r+'</span>';
+  }
+  function tbSearch(){
+    var q = $('tbSearch').value || '';
+    var f = { db: $('tbDb').value, category: $('tbCat').value, risk: $('tbRisk').value };
+    var results;
+    if (window.services && window.services.searchToolbox) {
+      try { results = window.services.searchToolbox(q, f); } catch(e){ results = null; }
+    }
+    if (!results) {
+      var ql = q.trim().toLowerCase();
+      results = tbItems.filter(function(it){
+        if (f.db!=='all' && it.db!==f.db) return false;
+        if (f.category!=='all' && it.category!==f.category) return false;
+        if (f.risk!=='all' && it.risk!==f.risk) return false;
+        if (!ql) return true;
+        return ql.split(/\s+/).every(function(w){
+          var hay = [it.title,it.desc,it.dbName,it.category,it.subcategory,it.notes,it.versions,it.sql||''].join(' ');
+          if (/^[A-Za-z0-9_]+$/.test(w)) {
+            try { return new RegExp('(?<![A-Za-z])'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![A-Za-z])','i').test(hay); }
+            catch(e){ return hay.toLowerCase().indexOf(w)!==-1; }
+          }
+          return hay.toLowerCase().indexOf(w)!==-1;
+        });
+      });
+    }
+    $('tbCount').textContent = '共 '+results.length+' 条';
+    var list = $('tbList');
+    list.innerHTML = results.slice(0,200).map(function(it){
+      return '<div class="tb-item'+(tbSelected&&tbSelected.id===it.id?' active':'')+'" data-id="'+it.id+'"><div class="t">'+it.title+tbRiskBadge(it.risk)+'</div><div class="m">'+it.dbName+' · '+it.category+' · '+it.subcategory+' · '+it.versions+'</div></div>';
+    }).join('') || '<div style="padding:12px;color:#8b9096">没找到，换个关键词试试（比如：慢SQL、表空间、RMAN）</div>';
+    list.querySelectorAll('.tb-item').forEach(function(el){
+      el.onclick = function(){ tbShow(el.dataset.id); };
+    });
+    if (!tbSelected || !results.some(function(r){ return r.id===tbSelected.id; })) {
+      if (results.length) tbShow(results[0].id, true);
+      else { tbSelected=null; $('tbDetail').innerHTML='<p style="color:#8b9096">没找到匹配的脚本。</p>'; }
+    }
+    return results;
+  }
+  function tbShow(id, silent){
+    var it = tbItems.find(function(x){ return x.id===id; });
+    if (!it) return;
+    tbSelected = it;
+    document.querySelectorAll('.tb-item').forEach(function(el){ el.classList.toggle('active', el.dataset.id===id); });
+    var params = it.params && it.params.length ? '<br>占位符：'+it.params.join('、')+'（替换成自己的值再执行）' : '';
+    $('tbDetail').innerHTML = '<h3>'+it.title+tbRiskBadge(it.risk)+'</h3>'
+      + '<div class="meta">'+it.dbName+'（'+(it.dbVersions||'')+'） · '+it.category+' · '+it.subcategory+'<br>适用版本：'+it.versions+' · '+(it.desc||'')+params+'</div>'
+      + '<pre>'+it.sql.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</pre>'
+      + (it.notes ? '<div class="notes">⚠️ '+it.notes.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>' : '');
+  }
+  function tbInitFilters(){
+    var dbs = {}, cats = {};
+    tbItems.forEach(function(it){ dbs[it.db]=it.dbName; cats[it.category]=1; });
+    $('tbDb').innerHTML = '<option value="all">全部数据库</option>' + Object.keys(dbs).map(function(k){ return '<option value="'+k+'">'+dbs[k]+'</option>'; }).join('');
+    $('tbCat').innerHTML = '<option value="all">全部分类</option>' + Object.keys(cats).map(function(k){ return '<option value="'+k+'">'+k+'</option>'; }).join('');
+  }
+  function initToolbox(){
+    tbLoad().then(function(){
+      if (!$('tbDb').dataset.init) { tbInitFilters(); $('tbDb').dataset.init='1'; }
+      tbSearch();
+    });
+  }
+  $('tbSearch').addEventListener('input', tbSearch);
+  $('tbDb').addEventListener('change', tbSearch);
+  $('tbCat').addEventListener('change', tbSearch);
+  $('tbRisk').addEventListener('change', tbSearch);
+  $('tbSearch').addEventListener('keydown', function(e){
+    if (e.key==='Enter' && tbSelected) { tbCopySql(false); }
+  });
+  function tbCopySql(hide){
+    if (!tbSelected) return;
+    var t = tbSelected.sql || '';
+    if (window.services && window.services.copyText) window.services.copyText(t);
+    else if (navigator.clipboard) navigator.clipboard.writeText(t);
+    $('tbCopy').textContent='已复制 ✓'; setTimeout(function(){ $('tbCopy').textContent='复制 SQL'; }, 1200);
+    if (hide && window.services && window.services.hideMainWindow) window.services.hideMainWindow();
+  }
+  $('tbCopy').onclick=function(){ tbCopySql(false); };
+  $('tbCopyHide').onclick=function(){ tbCopySql(true); };
   $('run').onclick=run;
   $('compress').onclick=function(){ var c=svc('compressSql')(getInput()); setOut(c,''); };
   $('copy').onclick=function(){
@@ -124,6 +282,21 @@
   // uTools enter payload: regex / files mode passes selected text or file path
   setTimeout(function(){
     try{
+      // Entered via "DBA工具箱" keyword: open on Toolbox tab
+      var code = window.__UTOOLS_ENTER_CODE__;
+      if (!code && window.services && window.services.getEnterAction) {
+        var ea = window.services.getEnterAction(); if (ea) code = ea.code;
+      }
+      if (code === 'toolbox') {
+        document.querySelector('.tab[data-tab="toolbox"]').click();
+        var sub = '';
+        try {
+          var ea2 = window.services && window.services.getEnterAction ? window.services.getEnterAction() : null;
+          if (ea2 && ea2.payload) sub = typeof ea2.payload === 'string' ? ea2.payload : '';
+        } catch(e){}
+        if (sub) { $('tbSearch').value = sub; tbSearch(); }
+        return;
+      }
       var p = window.__UTOOLS_ENTER_PAYLOAD__;
       if(!p && window.services && window.services.getEnterAction){
         var a = window.services.getEnterAction(); if(a) p = a.payload;

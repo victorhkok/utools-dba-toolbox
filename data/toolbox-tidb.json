@@ -22,7 +22,8 @@
                   "desc": "集群名"
                 }
               ],
-              "notes": "tiup 需在中控机执行，集群状态以 tiup 输出与 Dashboard 为准。"
+              "notes": "tiup 需在中控机执行，集群状态以 tiup 输出与 Dashboard 为准。",
+              "id": "tidb-001"
             },
             {
               "title": "TiKV / PD 状态",
@@ -36,7 +37,8 @@
                   "desc": "PD 地址"
                 }
               ],
-              "notes": "TiKV/PD 详细状态以 Dashboard 与 pd-ctl 为准，CLUSTER_INFO 列名需在 TiDB 6.x+ 实测核对。"
+              "notes": "TiKV/PD 详细状态以 Dashboard 与 pd-ctl 为准，CLUSTER_INFO 列名需在 TiDB 6.x+ 实测核对。",
+              "id": "tidb-002"
             }
           ]
         }
@@ -55,7 +57,8 @@
               "desc": "INFORMATION_SCHEMA.TIKV_REGION_STATUS",
               "sql": "SELECT REGION_ID, TABLE_ID, INDEX_ID, APPROXIMATE_SIZE, APPROXIMATE_KEYS FROM INFORMATION_SCHEMA.TIKV_REGION_STATUS ORDER BY APPROXIMATE_SIZE DESC LIMIT 20;",
               "params": [],
-              "notes": "TIKV_REGION_STATUS 的列名需在 TiDB 6.x+ 实测核对，热点以 Dashboard 热点图为准。"
+              "notes": "TIKV_REGION_STATUS 的列名需在 TiDB 6.x+ 实测核对，热点以 Dashboard 热点图为准。",
+              "id": "tidb-003"
             },
             {
               "title": "统计信息 / ANALYZE",
@@ -69,7 +72,8 @@
                   "desc": "表名"
                 }
               ],
-              "notes": "TiDB 的 ANALYZE 与 MySQL 兼容，生产建议非高峰执行。"
+              "notes": "TiDB 的 ANALYZE 与 MySQL 兼容，生产建议非高峰执行。",
+              "id": "tidb-004"
             }
           ]
         }
@@ -88,7 +92,8 @@
               "desc": "INFORMATION_SCHEMA.SLOW_QUERY",
               "sql": "SELECT QUERY, QUERY_TIME, MEM_MAX, TIME FROM INFORMATION_SCHEMA.SLOW_QUERY WHERE QUERY_TIME > 1 ORDER BY QUERY_TIME DESC LIMIT 20;",
               "params": [],
-              "notes": "SLOW_QUERY 需开启慢查询日志，字段名需在 TiDB 6.x+ 实测核对。"
+              "notes": "SLOW_QUERY 需开启慢查询日志，字段名需在 TiDB 6.x+ 实测核对。",
+              "id": "tidb-005"
             },
             {
               "title": "EXPLAIN ANALYZE",
@@ -106,7 +111,8 @@
                   "desc": "WHERE 条件"
                 }
               ],
-              "notes": "TiDB 的 EXPLAIN ANALYZE 与 MySQL 8.0 类似，输出含各算子真实耗时。"
+              "notes": "TiDB 的 EXPLAIN ANALYZE 与 MySQL 8.0 类似，输出含各算子真实耗时。",
+              "id": "tidb-006"
             }
           ]
         }
@@ -125,7 +131,8 @@
               "desc": "PD",
               "sql": "SELECT STORE_ID, ADDRESS, STATE, REGION_COUNT, LEADER_COUNT FROM INFORMATION_SCHEMA.TIKV_STORE_STATUS ORDER BY STORE_ID LIMIT 20;",
               "params": [],
-              "notes": "TIKV_STORE_STATUS 的列名需在 TiDB 6.x+ 实测核对，副本详情以 PD/Dashboard 为准。"
+              "notes": "TIKV_STORE_STATUS 的列名需在 TiDB 6.x+ 实测核对，副本详情以 PD/Dashboard 为准。",
+              "id": "tidb-007"
             },
             {
               "title": "TiFlash 同步延迟",
@@ -134,7 +141,8 @@
               "desc": "TiFlash 副本",
               "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, REPLICA_COUNT, AVAILABLE, PROGRESS FROM INFORMATION_SCHEMA.TIFLASH_REPLICA ORDER BY PROGRESS ASC LIMIT 20;",
               "params": [],
-              "notes": "TIFLASH_REPLICA 的列名需在 TiDB 6.x+ 实测核对，PROGRESS<1 表示同步中。"
+              "notes": "TIFLASH_REPLICA 的列名需在 TiDB 6.x+ 实测核对，PROGRESS<1 表示同步中。",
+              "id": "tidb-008"
             }
           ]
         }
@@ -162,7 +170,8 @@
                   "desc": "备份存储路径"
                 }
               ],
-              "notes": "BR 备份/PITR 语法与存储配置需在 TiDB 6.x+ 实测核对，恢复前先在测试集群演练。"
+              "notes": "BR 备份/PITR 语法与存储配置需在 TiDB 6.x+ 实测核对，恢复前先在测试集群演练。",
+              "id": "tidb-009"
             },
             {
               "title": "Dumpling 逻辑备份",
@@ -180,7 +189,8 @@
                   "desc": "导出目录"
                 }
               ],
-              "notes": "dumpling 参数需在 TiDB 6.x+ 实测核对，大库优先用 BR 物理备份。"
+              "notes": "dumpling 参数需在 TiDB 6.x+ 实测核对，大库优先用 BR 物理备份。",
+              "id": "tidb-010"
             }
           ]
         }

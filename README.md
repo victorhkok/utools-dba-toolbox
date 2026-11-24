@@ -49,20 +49,28 @@
 └── build_*.py               # 清单与 SQL 的生成脚本，可复跑核对
 ```
 
-## uTools 插件怎么用（v0.1 已实现）
+## uTools 插件怎么用（v0.2）
 
 1. uTools 里搜 `开发者工具` 安装，打开后添加本地插件，选本仓库文件夹
-2. `Alt+空格` 输入 `SQL格式化` / `sql` / `dba` 回车
+2. `Alt+空格` 输入 `SQL格式化` / `sql` / `dba` 回车（SQL 工具）；输入 `DBA工具箱` / `工具箱` 回车（脚本库）
 3. 选中 SQL 后鼠标中键呼出超级面板，选「格式化这段 SQL」；也可以把 SQL 粘贴进 uTools 输入框匹配，或拖 `.sql` 文件进来
 
-插件已实现的功能：
+### 脚本库搜索（v0.2 新增）
+
+- 入口：`Alt+空格` → `DBA工具箱`，直接打开「脚本库」页
+- 搜索框输标题或关键词，如 `慢SQL`、`AWR`、`表空间`、`RMAN`、`锁`，支持多关键词空格分隔
+- 筛选：数据库（Oracle / MySQL / PG / SQL Server / 达梦 / OB / GBase / TiDB / 通用）+ 分类 + 风险（只读 / 谨慎 / 危险）
+- 左侧点一条，右侧显示完整 SQL、适用版本、占位符和黄色提醒；点「复制 SQL」粘贴到客户端用，「复制并关闭」复制后直接关窗口；搜索框里按回车复制当前选中的第一条
+- 搜索是本地匹配，不联网；英文词按词边界匹配（搜 `RMAN` 不会误命中 `performance_schema`），中文按子串匹配
+- 数据源：`data/toolbox-filled.json`（215 条，每条有稳定 ID，如 `oracle-001`），`preload.js` 用 Node `fs` 本地读取，`searchToolbox(query, filters)` 供前端调用
+
+### SQL 工具（v0.1）
+
 - SQL 格式化（关键字大写可选，2/4 空格缩进，子查询换行）
 - Oracle ↔ MySQL 方言互转（NVL↔IFNULL、SYSDATE↔NOW()、TO_CHAR↔DATE_FORMAT 等，规则式，带警告）
 - SQL 脱敏（字符串 → `***`，数字 → `?`）
 - 列表转 IN（自动去重，纯数字不加引号，>1000 提示 ORA-01795）
 - 时间戳互转（10 位秒 / 13 位毫秒 ↔ 日期）
-
-脚本库（`scripts/` + `data/toolbox-filled.json`）是下一步要接进插件搜索界面的数据源，当前版本先以文件形式提供。
 
 ## 脚本怎么用
 

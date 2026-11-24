@@ -17,7 +17,8 @@
               "desc": "v$instance, v$database",
               "sql": "SELECT i.instance_name,\n       i.host_name,\n       i.version,\n       i.status,\n       i.startup_time,\n       d.name        AS db_name,\n       d.open_mode,\n       d.log_mode\nFROM   v$instance i,\n       v$database d;",
               "params": [],
-              "notes": "v$instance/v$database 均需 SYSDBA 或 SELECT_CATALOG_ROLE 权限；RAC 下每节点各查一次。"
+              "notes": "v$instance/v$database 均需 SYSDBA 或 SELECT_CATALOG_ROLE 权限；RAC 下每节点各查一次。",
+              "id": "oracle-001"
             },
             {
               "title": "监听与服务状态",
@@ -28,7 +29,8 @@
               "params": [
                 "<db_name>"
               ],
-              "notes": "lsnrctl/srvctl 需在服务器 OS 执行，SQL*Plus 里跑不了；先确认 ORACLE_HOME/ORACLE_SID。"
+              "notes": "lsnrctl/srvctl 需在服务器 OS 执行，SQL*Plus 里跑不了；先确认 ORACLE_HOME/ORACLE_SID。",
+              "id": "oracle-002"
             },
             {
               "title": "数据库 / PDB 列表",
@@ -37,7 +39,8 @@
               "desc": "CDB+PDB，11g无PDB",
               "sql": "SELECT name, cdb, open_mode, log_mode\nFROM   v$database;\n\nSELECT con_id, name, open_mode, restricted, total_size\nFROM   v$pdbs\nORDER  BY con_id;",
               "params": [],
-              "notes": "仅 12c+ 有 v$pdbs / CDB 概念，11g 跑第二条会报 ORA-00942；先查 v$database.cdb 确认是否 CDB。"
+              "notes": "仅 12c+ 有 v$pdbs / CDB 概念，11g 跑第二条会报 ORA-00942；先查 v$database.cdb 确认是否 CDB。",
+              "id": "oracle-003"
             },
             {
               "title": "无效对象清单",
@@ -46,7 +49,8 @@
               "desc": "dba_objects status=INVALID",
               "sql": "SELECT owner, object_type, COUNT(*) AS cnt\nFROM   dba_objects\nWHERE  status = 'INVALID'\nGROUP  BY owner, object_type\nORDER  BY cnt DESC;\n\n-- 明细（前 50）：\nSELECT *\nFROM   (SELECT owner, object_name, object_type, status, last_ddl_time\n        FROM   dba_objects\n        WHERE  status = 'INVALID'\n        ORDER  BY owner, object_type, object_name)\nWHERE  ROWNUM <= 50;",
               "params": [],
-              "notes": "只列清单不自动编译；编译用 ALTER ... COMPILE，需先确认对象属主和依赖，生产慎做。"
+              "notes": "只列清单不自动编译；编译用 ALTER ... COMPILE，需先确认对象属主和依赖，生产慎做。",
+              "id": "oracle-004"
             },
             {
               "title": "定时任务 / 作业状态",
@@ -55,7 +59,8 @@
               "desc": "dba_scheduler_jobs",
               "sql": "SELECT owner, job_name, job_type, state, enabled,\n       last_start_date, next_run_date, failure_count\nFROM   dba_scheduler_jobs\nWHERE  owner NOT IN ('SYS', 'SYSTEM')\nORDER  BY owner, job_name;",
               "params": [],
-              "notes": "state=BROKEN/FAILURE 重点看；查单作业失败明细用 dba_scheduler_job_run_details。"
+              "notes": "state=BROKEN/FAILURE 重点看；查单作业失败明细用 dba_scheduler_job_run_details。",
+              "id": "oracle-005"
             },
             {
               "title": "告警日志近24h错误",
@@ -67,7 +72,8 @@
                 "<db_name>",
                 "<sid>"
               ],
-              "notes": "ADRCI 的 homepath 按实际 diag 路径填；alert 日志不在数据库里，SQL 查不到内容，只能查路径。"
+              "notes": "ADRCI 的 homepath 按实际 diag 路径填；alert 日志不在数据库里，SQL 查不到内容，只能查路径。",
+              "id": "oracle-006"
             }
           ]
         },
@@ -81,7 +87,8 @@
               "desc": ">85%预警",
               "sql": "SELECT df.tablespace_name,\n       ROUND(df.total_mb, 2)                         AS total_mb,\n       ROUND(NVL(fs.free_mb, 0), 2)                 AS free_mb,\n       ROUND((df.total_mb - NVL(fs.free_mb, 0)) / df.total_mb * 100, 2) AS pct_used\nFROM   (SELECT tablespace_name, SUM(bytes) / 1024 / 1024 AS total_mb\n        FROM   dba_data_files\n        GROUP  BY tablespace_name) df\n       LEFT JOIN\n       (SELECT tablespace_name, SUM(bytes) / 1024 / 1024 AS free_mb\n        FROM   dba_free_space\n        GROUP  BY tablespace_name) fs\n       ON df.tablespace_name = fs.tablespace_name\nORDER  BY pct_used DESC;",
               "params": [],
-              "notes": "使用率 >85% 预警，>95% 立即处理；临时表空间不在 dba_data_files 里，见“临时表空间使用”那条。"
+              "notes": "使用率 >85% 预警，>95% 立即处理；临时表空间不在 dba_data_files 里，见“临时表空间使用”那条。",
+              "id": "oracle-007"
             },
             {
               "title": "归档日志生成量 / 切换频率",
@@ -90,7 +97,8 @@
               "desc": "v$archived_log",
               "sql": "SELECT TRUNC(first_time) AS day,\n       COUNT(*)             AS arch_count,\n       ROUND(SUM(blocks * block_size) / 1024 / 1024, 2) AS mb_generated\nFROM   v$archived_log\nWHERE  first_time >= SYSDATE - 7\nGROUP  BY TRUNC(first_time)\nORDER  BY day DESC;\n\n-- 日志切换次数（近 7 天，按天）：\nSELECT TRUNC(first_time) AS day, COUNT(*) AS switch_count\nFROM   v$log_history\nWHERE  first_time >= SYSDATE - 7\nGROUP  BY TRUNC(first_time)\nORDER  BY day DESC;",
               "params": [],
-              "notes": "v$archived_log 只保留控制文件记录的归档，控制文件被覆盖后旧记录会丢；长期趋势以备份/监控为准。"
+              "notes": "v$archived_log 只保留控制文件记录的归档，控制文件被覆盖后旧记录会丢；长期趋势以备份/监控为准。",
+              "id": "oracle-008"
             },
             {
               "title": "临时表空间使用",
@@ -99,7 +107,8 @@
               "desc": "v$tempseg_usage",
               "sql": "SELECT u.username,\n       s.sid,\n       s.serial#,\n       u.tablespace,\n       u.segtype,\n       u.blocks,\n       ROUND(u.blocks * 8192 / 1024 / 1024, 2) AS mb_used\nFROM   v$tempseg_usage u\n       JOIN v$session s ON u.session_addr = s.saddr\nORDER  BY u.blocks DESC;",
               "params": [],
-              "notes": "块大小按 8K 估算，不同库块大小用 SELECT value FROM v$parameter WHERE name='db_block_size' 核对；无行返回说明当前无人用临时段。"
+              "notes": "块大小按 8K 估算，不同库块大小用 SELECT value FROM v$parameter WHERE name='db_block_size' 核对；无行返回说明当前无人用临时段。",
+              "id": "oracle-009"
             },
             {
               "title": "UNDO 使用与保留",
@@ -108,7 +117,8 @@
               "desc": "v$undostat",
               "sql": "SELECT tablespace_name, retention\nFROM   dba_tablespaces\nWHERE  contents = 'UNDO';\n\nSELECT TO_CHAR(begin_time, 'YYYY-MM-DD HH24:MI') AS begin_time,\n       undoblks, txncount, maxquerylen, tuned_undoretention\nFROM   v$undostat\nWHERE  begin_time >= SYSDATE - 1\nORDER  BY begin_time DESC;",
               "params": [],
-              "notes": "tuned_undoretention 是自动调优后的建议保留秒数；ORA-01555 快照过旧先看 maxquerylen 和 UNDO 大小。"
+              "notes": "tuned_undoretention 是自动调优后的建议保留秒数；ORA-01555 快照过旧先看 maxquerylen 和 UNDO 大小。",
+              "id": "oracle-010"
             }
           ]
         }
@@ -130,7 +140,8 @@
                 "<snap_id_start>",
                 "<snap_id_end>"
               ],
-              "notes": "AWR 需 Diagnostic Pack 授权，无授权不要用 dba_hist_*；create_snapshot 本身是写操作，虽列为只读条目，执行前确认授权。"
+              "notes": "AWR 需 Diagnostic Pack 授权，无授权不要用 dba_hist_*；create_snapshot 本身是写操作，虽列为只读条目，执行前确认授权。",
+              "id": "oracle-011"
             },
             {
               "title": "ASH Top 等待事件",
@@ -139,7 +150,8 @@
               "desc": "v$active_session_history",
               "sql": "SELECT *\nFROM   (SELECT event,\n               wait_class,\n               COUNT(*) AS samples,\n               ROUND(COUNT(*) * 100 / SUM(COUNT(*)) OVER (), 2) AS pct\n        FROM   v$active_session_history\n        WHERE  sample_time >= SYSDATE - 1 / 24\n          AND  event IS NOT NULL\n        GROUP  BY event, wait_class\n        ORDER  BY samples DESC)\nWHERE  ROWNUM <= 20;",
               "params": [],
-              "notes": "v$active_session_history 是 1 秒采样，COUNT(*) 不是精确等待秒数，只能看占比；同样需 Diagnostic Pack 授权。"
+              "notes": "v$active_session_history 是 1 秒采样，COUNT(*) 不是精确等待秒数，只能看占比；同样需 Diagnostic Pack 授权。",
+              "id": "oracle-012"
             },
             {
               "title": "DB Time / 负载画像",
@@ -148,7 +160,8 @@
               "desc": "AWR Load Profile",
               "sql": "SELECT stat_name,\n       ROUND(value / 1000000, 2) AS seconds\nFROM   v$sys_time_model\nWHERE  stat_name IN ('DB time', 'DB CPU', 'background cpu time',\n                     'sql execute elapsed time', 'parse time elapsed')\nORDER  BY value DESC;\n\n-- 另查 AWR Load Profile 需 awrrpt.sql 报告里的 Load Profile 一节，本条只给 DB Time 总量。",
               "params": [],
-              "notes": "DB time 是所有前台会话 CPU+等待之和，可大于挂钟时间；DB time / 挂钟时间 ≈ 平均活跃会话数。"
+              "notes": "DB time 是所有前台会话 CPU+等待之和，可大于挂钟时间；DB time / 挂钟时间 ≈ 平均活跃会话数。",
+              "id": "oracle-013"
             },
             {
               "title": "SGA / PGA 使用与建议",
@@ -157,7 +170,8 @@
               "desc": "v$sga, v$pga_target_advice",
               "sql": "SELECT name, ROUND(value / 1024 / 1024, 2) AS mb\nFROM   v$sga;\n\nSELECT pga_target_for_estimate / 1024 / 1024 AS pga_target_mb,\n       estd_pga_cache_hit_percentage,\n       estd_overalloc_count\nFROM   v$pga_target_advice\nORDER  BY pga_target_for_estimate;\n\nSELECT name, value\nFROM   v$pgastat\nWHERE  name IN ('total PGA allocated', 'total PGA inuse', 'maximum PGA allocated');",
               "params": [],
-              "notes": "v$pga_target_advice 只在 PGA_AGGREGATE_TARGET 非 0 时有意义；SGA 改参数要重启或 ALTER SYSTEM，勿直接按建议值改生产。"
+              "notes": "v$pga_target_advice 只在 PGA_AGGREGATE_TARGET 非 0 时有意义；SGA 改参数要重启或 ALTER SYSTEM，勿直接按建议值改生产。",
+              "id": "oracle-014"
             }
           ]
         },
@@ -171,7 +185,8 @@
               "desc": "v$sysstat",
               "sql": "SELECT ROUND((1 - (SELECT value FROM v$sysstat WHERE name = 'physical reads')\n                    / NULLIF((SELECT value FROM v$sysstat WHERE name = 'db block gets')\n                             + (SELECT value FROM v$sysstat WHERE name = 'consistent gets'), 0)) * 100, 2) AS buffer_hit_pct\nFROM   dual;\n\nSELECT name, value\nFROM   v$sysstat\nWHERE  name IN ('db block gets', 'consistent gets', 'physical reads', 'physical reads cache')\nORDER  BY name;",
               "params": [],
-              "notes": "命中率是自启动累计值，重启后清零；单看命中率不够，全表扫描多的库命中率也可能虚高，要结合 Top SQL 看。"
+              "notes": "命中率是自启动累计值，重启后清零；单看命中率不够，全表扫描多的库命中率也可能虚高，要结合 Top SQL 看。",
+              "id": "oracle-015"
             },
             {
               "title": "Library Cache / 共享池",
@@ -180,7 +195,8 @@
               "desc": "v$librarycache",
               "sql": "SELECT namespace, gets, gethits,\n       ROUND(gethits / NULLIF(gets, 0) * 100, 2) AS gethit_pct,\n       pins, pinhits,\n       ROUND(pinhits / NULLIF(pins, 0) * 100, 2) AS pinhit_pct,\n       reloads, invalidations\nFROM   v$librarycache\nORDER  BY namespace;",
               "params": [],
-              "notes": "reloads/invalidations 持续增长说明硬解析或对象频繁失效；先查共享池和绑定变量，不要直接调大 shared_pool。"
+              "notes": "reloads/invalidations 持续增长说明硬解析或对象频繁失效；先查共享池和绑定变量，不要直接调大 shared_pool。",
+              "id": "oracle-016"
             },
             {
               "title": "表 / 索引统计信息是否过期",
@@ -189,7 +205,8 @@
               "desc": "dba_tab_statistics",
               "sql": "SELECT *\nFROM   (SELECT owner, table_name, num_rows, last_analyzed, stale_stats\n        FROM   dba_tab_statistics\n        WHERE  stale_stats = 'YES'\n          AND  owner NOT IN ('SYS', 'SYSTEM', 'DBSNMP')\n        ORDER  BY last_analyzed NULLS FIRST)\nWHERE  ROWNUM <= 50;",
               "params": [],
-              "notes": "stale_stats='YES' 只表示 10% 行变化后未收集，不等于执行计划一定差；先看具体表的慢 SQL 再决定收集。"
+              "notes": "stale_stats='YES' 只表示 10% 行变化后未收集，不等于执行计划一定差；先看具体表的慢 SQL 再决定收集。",
+              "id": "oracle-017"
             },
             {
               "title": "收集统计信息（DBMS_STATS）",
@@ -201,7 +218,8 @@
                 "<schema>",
                 "<table_name>"
               ],
-              "notes": "生产高峰不要全库收集；cascade=>TRUE 会连索引一起收集，degree 按 CPU 核数填，勿填过大。"
+              "notes": "生产高峰不要全库收集；cascade=>TRUE 会连索引一起收集，degree 按 CPU 核数填，勿填过大。",
+              "id": "oracle-018"
             }
           ]
         },
@@ -218,7 +236,8 @@
                 "<owner>",
                 "<index_name>"
               ],
-              "notes": "v$object_usage 只有开过 MONITORING USAGE 的索引才有行；没监控过查不到不等于没用，勿直接删索引。"
+              "notes": "v$object_usage 只有开过 MONITORING USAGE 的索引才有行；没监控过查不到不等于没用，勿直接删索引。",
+              "id": "oracle-019"
             },
             {
               "title": "缺失索引建议（SQL Tuning）",
@@ -230,7 +249,8 @@
                 "<sql_id>",
                 "<task_name>"
               ],
-              "notes": "把握一般：DBMS_SQLTUNE 需 Tuning Pack 授权，且 create_tuning_task 的返回值用法在不同版本有细节差异，生产先在测试库跑通再用。"
+              "notes": "把握一般：DBMS_SQLTUNE 需 Tuning Pack 授权，且 create_tuning_task 的返回值用法在不同版本有细节差异，生产先在测试库跑通再用。",
+              "id": "oracle-020"
             },
             {
               "title": "索引碎片 / 重建评估",
@@ -242,7 +262,8 @@
                 "<owner>",
                 "<index_name>"
               ],
-              "notes": "blevel>4 或 leaf_blocks 明显偏大才考虑重建；ONLINE 重建仍需空间和锁评估，碎片不高时重建收益很小。"
+              "notes": "blevel>4 或 leaf_blocks 明显偏大才考虑重建；ONLINE 重建仍需空间和锁评估，碎片不高时重建收益很小。",
+              "id": "oracle-021"
             }
           ]
         }
@@ -261,7 +282,8 @@
               "desc": "v$sql / AWR Top SQL",
               "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               ROUND(elapsed_time / 1000000, 2) AS elapsed_sec,\n               ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n               buffer_gets, disk_reads,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY elapsed_time DESC)\nWHERE  ROWNUM <= 20;",
               "params": [],
-              "notes": "elapsed_time 单位是微秒；v$sql 是共享池累计值，实例重启后清零，长期 Top 以 AWR 为准。"
+              "notes": "elapsed_time 单位是微秒；v$sql 是共享池累计值，实例重启后清零，长期 Top 以 AWR 为准。",
+              "id": "oracle-022"
             },
             {
               "title": "Top SQL by Buffer Gets",
@@ -270,7 +292,8 @@
               "desc": "逻辑读最高",
               "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               buffer_gets,\n               ROUND(buffer_gets / NULLIF(executions, 0), 0) AS gets_per_exec,\n               ROUND(elapsed_time / 1000000, 2) AS elapsed_sec,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY buffer_gets DESC)\nWHERE  ROWNUM <= 20;",
               "params": [],
-              "notes": "逻辑读高不一定是慢 SQL，要结合 avg_sec 和执行次数看；先看 gets_per_exec 再决定是否优化。"
+              "notes": "逻辑读高不一定是慢 SQL，要结合 avg_sec 和执行次数看；先看 gets_per_exec 再决定是否优化。",
+              "id": "oracle-023"
             },
             {
               "title": "Top SQL by Executions",
@@ -279,7 +302,8 @@
               "desc": "执行次数最多",
               "sql": "SELECT *\nFROM   (SELECT sql_id, executions,\n               ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n               buffer_gets, disk_reads,\n               SUBSTR(sql_text, 1, 200) AS sql_text\n        FROM   v$sql\n        ORDER  BY executions DESC)\nWHERE  ROWNUM <= 20;",
               "params": [],
-              "notes": "执行次数多、单次不慢的 SQL 也值得优化，累计耗时可能最大；注意 v$sql_text 可能被截断。"
+              "notes": "执行次数多、单次不慢的 SQL 也值得优化，累计耗时可能最大；注意 v$sql_text 可能被截断。",
+              "id": "oracle-024"
             },
             {
               "title": "近1h 慢SQL（执行>5s）",
@@ -288,7 +312,8 @@
               "desc": "v$sql + elapsed",
               "sql": "SELECT sql_id, executions,\n       ROUND(elapsed_time / NULLIF(executions, 0) / 1000000, 2) AS avg_sec,\n       ROUND(elapsed_time / 1000000, 2) AS total_sec,\n       buffer_gets,\n       SUBSTR(sql_text, 1, 200) AS sql_text\nFROM   v$sql\nWHERE  last_active_time >= SYSDATE - 1 / 24\n  AND  executions > 0\n  AND  elapsed_time / executions > 5000000\nORDER  BY avg_sec DESC;",
               "params": [],
-              "notes": "5 秒阈值是 elapsed_time/executions > 5,000,000 微秒；last_active_time 是最后活跃时间，不是首次执行时间。"
+              "notes": "5 秒阈值是 elapsed_time/executions > 5,000,000 微秒；last_active_time 是最后活跃时间，不是首次执行时间。",
+              "id": "oracle-025"
             }
           ]
         },
@@ -306,7 +331,8 @@
                 "<table_name>",
                 "<condition>"
               ],
-              "notes": "EXPLAIN PLAN 是预估计划，不代表真实执行；要真实行数用 DISPLAY_CURSOR 或加 GATHER_PLAN_STATISTICS Hint。"
+              "notes": "EXPLAIN PLAN 是预估计划，不代表真实执行；要真实行数用 DISPLAY_CURSOR 或加 GATHER_PLAN_STATISTICS Hint。",
+              "id": "oracle-026"
             },
             {
               "title": "真实执行计划（DBMS_XPLAN.DISPLAY_CURSOR）",
@@ -318,7 +344,8 @@
                 "<sql_id>",
                 "<child_number>"
               ],
-              "notes": "'ALLSTATS LAST' 只有 SQL 带 /*+ GATHER_PLAN_STATISTICS */ 或 statistics_level=ALL 时才有 A-Rows/Buffers，否则只显示预估。"
+              "notes": "'ALLSTATS LAST' 只有 SQL 带 /*+ GATHER_PLAN_STATISTICS */ 或 statistics_level=ALL 时才有 A-Rows/Buffers，否则只显示预估。",
+              "id": "oracle-027"
             },
             {
               "title": "全表扫描 SQL 清单",
@@ -327,7 +354,8 @@
               "desc": "TABLE ACCESS FULL",
               "sql": "SELECT p.sql_id,\n       COUNT(*) AS full_scan_ops,\n       MAX(s.executions) AS executions,\n       SUBSTR(MAX(s.sql_text), 1, 200) AS sql_text\nFROM   v$sql_plan p\n       JOIN v$sql s ON p.sql_id = s.sql_id AND p.child_number = s.child_number\nWHERE  p.operation = 'TABLE ACCESS'\n  AND  p.options = 'FULL'\nGROUP  BY p.sql_id\nORDER  BY full_scan_ops DESC;",
               "params": [],
-              "notes": "v$sql_plan 只保留共享池里的计划，重启后丢失；小表全表扫描是正常的，先看表大小和执行次数再优化。"
+              "notes": "v$sql_plan 只保留共享池里的计划，重启后丢失；小表全表扫描是正常的，先看表大小和执行次数再优化。",
+              "id": "oracle-028"
             },
             {
               "title": "绑定变量窥探 / 直方图检查",
@@ -339,7 +367,8 @@
                 "<sql_id>",
                 "<schema>"
               ],
-              "notes": "v$sql_bind_capture 只保留最近一次捕获的绑定值，不代表每次执行的值；直方图过期会导致绑定窥探失真。"
+              "notes": "v$sql_bind_capture 只保留最近一次捕获的绑定值，不代表每次执行的值；直方图过期会导致绑定窥探失真。",
+              "id": "oracle-029"
             }
           ]
         },
@@ -356,7 +385,8 @@
                 "<task_name>",
                 "<profile_name>"
               ],
-              "notes": "接受 Profile 会改变执行计划，生产先在测试库验证；Baseline 需先用 DBMS_SPM.load_plans_from_cursor_cache 加载。"
+              "notes": "接受 Profile 会改变执行计划，生产先在测试库验证；Baseline 需先用 DBMS_SPM.load_plans_from_cursor_cache 加载。",
+              "id": "oracle-030"
             },
             {
               "title": "自动索引建议（19c+）",
@@ -365,7 +395,8 @@
               "desc": "DBMS_AUTO_INDEX",
               "sql": "-- 查自动索引配置：\nSELECT parameter_name, parameter_value\nFROM   dba_auto_index_config\nORDER  BY parameter_name;\n\n-- 查已自动创建的索引：\nSELECT index_name, table_owner, table_name, auto\nFROM   dba_indexes\nWHERE  auto = 'YES'\nORDER  BY table_name;\n\n-- 查最近自动索引活动报告：\n-- SELECT DBMS_AUTO_INDEX.report_last_activity() FROM dual;",
               "params": [],
-              "notes": "把握一般：DBA_AUTO_INDEX_CONFIG 的列名/参数名在 19c 各补丁间有细节差异，且自动索引默认不开启；本条先以查询为准，开启前务必在测试库核对视图定义。"
+              "notes": "把握一般：DBA_AUTO_INDEX_CONFIG 的列名/参数名在 19c 各补丁间有细节差异，且自动索引默认不开启；本条先以查询为准，开启前务必在测试库核对视图定义。",
+              "id": "oracle-031"
             },
             {
               "title": "Hint 改写模板",
@@ -379,7 +410,8 @@
                 "<index_name>",
                 "<condition>"
               ],
-              "notes": "Hint 写错表别名/索引名会被优化器静默忽略；改完务必用 DISPLAY_CURSOR 确认计划真的变了。"
+              "notes": "Hint 写错表别名/索引名会被优化器静默忽略；改完务必用 DISPLAY_CURSOR 确认计划真的变了。",
+              "id": "oracle-032"
             }
           ]
         }
@@ -398,7 +430,8 @@
               "desc": "v$lock + v$session blocking",
               "sql": "SELECT sid, serial#, username, machine, program, status,\n       blocking_session, blocking_session_serial#,\n       event, sql_id,\n       ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\nFROM   v$session\nWHERE  blocking_session IS NOT NULL\n   OR  sid IN (SELECT blocking_session FROM v$session WHERE blocking_session IS NOT NULL)\nORDER  BY blocking_session NULLS FIRST, sid;\n\n-- 锁详情（v$lock）：\nSELECT l.sid, l.type, l.lmode, l.request, l.block, s.username\nFROM   v$lock l\n       JOIN v$session s ON l.sid = s.sid\nWHERE  l.block = 1 OR l.request > 0\nORDER  BY l.sid;",
               "params": [],
-              "notes": "blocking_session 为空不代表没锁，可能是行锁在等 TX；先找根阻塞者（blocking_session 为空的那行），不要先杀等待者。"
+              "notes": "blocking_session 为空不代表没锁，可能是行锁在等 TX；先找根阻塞者（blocking_session 为空的那行），不要先杀等待者。",
+              "id": "oracle-033"
             },
             {
               "title": "死锁历史（ORA-00060）",
@@ -410,7 +443,8 @@
                 "<db_name>",
                 "<sid>"
               ],
-              "notes": "死锁信息不在 v$ 视图里，只能看 alert 日志和 trace 文件；本条 SQL 只能定位日志路径，不能直接查出死锁 SQL。"
+              "notes": "死锁信息不在 v$ 视图里，只能看 alert 日志和 trace 文件；本条 SQL 只能定位日志路径，不能直接查出死锁 SQL。",
+              "id": "oracle-034"
             },
             {
               "title": "行锁等待详情",
@@ -419,7 +453,8 @@
               "desc": "v$session + row_wait",
               "sql": "SELECT s.sid, s.serial#, s.username, s.event, s.seconds_in_wait,\n       s.row_wait_obj#, s.row_wait_file#, s.row_wait_block#, s.row_wait_row#,\n       o.object_name, o.object_type\nFROM   v$session s\n       LEFT JOIN dba_objects o ON o.object_id = s.row_wait_obj#\nWHERE  s.event LIKE 'enq: TX%'\n   OR  s.wait_class = 'Application'\nORDER  BY s.seconds_in_wait DESC;",
               "params": [],
-              "notes": "row_wait_* 只在会话正在等行锁时有值，锁释放后就没了；要定位行内容需按 file#/block#/row# 再查表，生产慎做。"
+              "notes": "row_wait_* 只在会话正在等行锁时有值，锁释放后就没了；要定位行内容需按 file#/block#/row# 再查表，生产慎做。",
+              "id": "oracle-035"
             },
             {
               "title": "杀会话（ALTER SYSTEM KILL）",
@@ -432,7 +467,8 @@
                 "<serial#>",
                 "<inst_id>"
               ],
-              "notes": "DANGER：先确认 sid+serial# 对应的是目标会话而非后台进程；KILL 后会话可能要等 PMON 清理回滚，勿重复 KILL。"
+              "notes": "DANGER：先确认 sid+serial# 对应的是目标会话而非后台进程；KILL 后会话可能要等 PMON 清理回滚，勿重复 KILL。",
+              "id": "oracle-036"
             }
           ]
         },
@@ -446,7 +482,8 @@
               "desc": "v$session status=ACTIVE",
               "sql": "SELECT *\nFROM   (SELECT sid, serial#, username, machine, program, status,\n               event, sql_id,\n               ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\n        FROM   v$session\n        WHERE  status = 'ACTIVE'\n          AND  type = 'USER'\n        ORDER  BY logon_time)\nWHERE  ROWNUM <= 20;",
               "params": [],
-              "notes": "ACTIVE 只表示此刻在跑 SQL，不等于长耗时；结合 sql_id 和 event 看，不要只按 logon_time 排序就杀。"
+              "notes": "ACTIVE 只表示此刻在跑 SQL，不等于长耗时；结合 sql_id 和 event 看，不要只按 logon_time 排序就杀。",
+              "id": "oracle-037"
             },
             {
               "title": "等待事件 Top 10",
@@ -455,7 +492,8 @@
               "desc": "v$system_event",
               "sql": "SELECT *\nFROM   (SELECT event, total_waits,\n               ROUND(time_waited / 100, 2) AS waited_sec,\n               ROUND(time_waited_micro / 1000000, 2) AS waited_sec_micro,\n               total_timeouts\n        FROM   v$system_event\n        WHERE  event NOT LIKE 'SQL*Net%'\n          AND  event NOT LIKE 'rdbms ipc%'\n        ORDER  BY time_waited DESC)\nWHERE  ROWNUM <= 10;",
               "params": [],
-              "notes": "time_waited 单位是百分之一秒，time_waited_micro 是微秒，两者不要混用；idle 类事件已过滤，仍需结合 ASH 看。"
+              "notes": "time_waited 单位是百分之一秒，time_waited_micro 是微秒，两者不要混用；idle 类事件已过滤，仍需结合 ASH 看。",
+              "id": "oracle-038"
             },
             {
               "title": "长运行会话（>30min）",
@@ -464,7 +502,8 @@
               "desc": "v$session + sql",
               "sql": "SELECT sid, serial#, username, sql_id, event,\n       last_call_et,\n       ROUND(last_call_et / 60, 1) AS mins_running,\n       ROUND((SYSDATE - logon_time) * 24 * 60, 1) AS mins_since_logon\nFROM   v$session\nWHERE  status = 'ACTIVE'\n  AND  type = 'USER'\n  AND  last_call_et > 1800\nORDER  BY last_call_et DESC;",
               "params": [],
-              "notes": "last_call_et 是当前调用已持续秒数，不是整个会话时长；>1800 秒即 30 分钟，勿把空闲会话（last_call_et 大但 status=INACTIVE）算进来。"
+              "notes": "last_call_et 是当前调用已持续秒数，不是整个会话时长；>1800 秒即 30 分钟，勿把空闲会话（last_call_et 大但 status=INACTIVE）算进来。",
+              "id": "oracle-039"
             }
           ]
         }
@@ -487,7 +526,8 @@
                 "<datafile_path>",
                 "<datafile_dir>"
               ],
-              "notes": "DANGER：先确认磁盘余量和文件路径权限；SIZE/MAXSIZE 按实际剩余空间填，不要照抄 1G/UNLIMITED。"
+              "notes": "DANGER：先确认磁盘余量和文件路径权限；SIZE/MAXSIZE 按实际剩余空间填，不要照抄 1G/UNLIMITED。",
+              "id": "oracle-040"
             },
             {
               "title": "数据文件 / 自动扩展状态",
@@ -496,7 +536,8 @@
               "desc": "dba_data_files",
               "sql": "SELECT tablespace_name, file_name,\n       ROUND(bytes / 1024 / 1024, 2) AS mb,\n       ROUND(maxbytes / 1024 / 1024, 2) AS max_mb,\n       autoextensible, increment_by\nFROM   dba_data_files\nORDER  BY tablespace_name, file_id;",
               "params": [],
-              "notes": "maxbytes=0 表示未设上限或不可扩展，要结合 autoextensible 看；increment_by 单位是块，不是 MB。"
+              "notes": "maxbytes=0 表示未设上限或不可扩展，要结合 autoextensible 看；increment_by 单位是块，不是 MB。",
+              "id": "oracle-041"
             },
             {
               "title": "段增长 Top 20",
@@ -505,7 +546,8 @@
               "desc": "dba_segments",
               "sql": "SELECT *\nFROM   (SELECT owner, segment_name, segment_type, tablespace_name,\n               ROUND(bytes / 1024 / 1024, 2) AS mb\n        FROM   dba_segments\n        ORDER  BY bytes DESC)\nWHERE  ROWNUM <= 20;",
               "params": [],
-              "notes": "dba_segments 是当前大小，不是增长量；要增长趋势需定期快照对比，或查 dba_hist_seg_stat（需 Diagnostic Pack）。"
+              "notes": "dba_segments 是当前大小，不是增长量；要增长趋势需定期快照对比，或查 dba_hist_seg_stat（需 Diagnostic Pack）。",
+              "id": "oracle-042"
             },
             {
               "title": "大表 / 大索引清单",
@@ -514,7 +556,8 @@
               "desc": "按MB排序",
               "sql": "SELECT *\nFROM   (SELECT owner, segment_name, segment_type, tablespace_name,\n               ROUND(bytes / 1024 / 1024, 2) AS mb\n        FROM   dba_segments\n        WHERE  segment_type IN ('TABLE', 'INDEX')\n        ORDER  BY bytes DESC)\nWHERE  ROWNUM <= 20;",
               "params": [],
-              "notes": "只按段大小排，分区表会拆成多个段；要整表大小需按 segment_name 去掉分区后缀汇总。"
+              "notes": "只按段大小排，分区表会拆成多个段；要整表大小需按 segment_name 去掉分区后缀汇总。",
+              "id": "oracle-043"
             },
             {
               "title": "回收站清理（PURGE）",
@@ -526,7 +569,8 @@
                 "<owner>",
                 "<object_name>"
               ],
-              "notes": "PURGE 后 DROP 的表无法再闪回恢复；先确认 droptime 和 original_name 是要删的表，再执行。"
+              "notes": "PURGE 后 DROP 的表无法再闪回恢复；先确认 droptime 和 original_name 是要删的表，再执行。",
+              "id": "oracle-044"
             }
           ]
         }
@@ -547,7 +591,8 @@
               "params": [
                 "<backup_dir>"
               ],
-              "notes": "PLUS ARCHIVELOG 会先切归档再备份；DELETE OBSOLETE 按保留策略删旧备份，执行前先 SHOW RETENTION POLICY 确认。"
+              "notes": "PLUS ARCHIVELOG 会先切归档再备份；DELETE OBSOLETE 按保留策略删旧备份，执行前先 SHOW RETENTION POLICY 确认。",
+              "id": "oracle-045"
             },
             {
               "title": "RMAN 增量 0/1 级备份",
@@ -558,7 +603,8 @@
               "params": [
                 "<backup_dir>"
               ],
-              "notes": "0 级是 1 级的基准，1 级恢复要依赖最近的 0 级；先做 0 级再做 1 级，不要只跑 1 级。"
+              "notes": "0 级是 1 级的基准，1 级恢复要依赖最近的 0 级；先做 0 级再做 1 级，不要只跑 1 级。",
+              "id": "oracle-046"
             },
             {
               "title": "RMAN 备份集 / 保留策略检查",
@@ -567,7 +613,8 @@
               "desc": "LIST BACKUP / REPORT",
               "sql": "-- RMAN 命令（只读检查）：\n-- LIST BACKUP SUMMARY;\n-- LIST BACKUP OF DATABASE SUMMARY;\n-- SHOW RETENTION POLICY;\n-- SHOW ALL;\n-- REPORT OBSOLETE;\n-- REPORT NEED BACKUP;",
               "params": [],
-              "notes": "LIST/REPORT 是 RMAN 命令不是 SQL，在 SQL*Plus 里跑不了；REPORT OBSOLETE 只报告不删除，删除用 DELETE OBSOLETE。"
+              "notes": "LIST/REPORT 是 RMAN 命令不是 SQL，在 SQL*Plus 里跑不了；REPORT OBSOLETE 只报告不删除，删除用 DELETE OBSOLETE。",
+              "id": "oracle-047"
             },
             {
               "title": "RMAN 恢复演练清单",
@@ -576,7 +623,8 @@
               "desc": "测试库演练，勿在生产直接跑",
               "sql": "-- 演练清单（只在测试库/演练环境执行，勿在生产直接跑）：\n-- 1. LIST BACKUP SUMMARY;              -- 确认最近一次全备+归档都在\n-- 2. SHOW RETENTION POLICY;            -- 确认保留策略\n-- 3. RESTORE DATABASE PREVIEW;         -- 预演恢复，不真正写文件\n-- 4. VALIDATE DATABASE;                -- 校验备份可读\n-- 5. RESTORE DATABASE; RECOVER DATABASE; ALTER DATABASE OPEN RESETLOGS;\n--    -- 第 5 步只在演练库执行，生产恢复按实际故障场景走，勿照抄 RESETLOGS",
               "params": [],
-              "notes": "把握一般：本条是演练清单不是单条可执行 SQL，RESTORE/RECOVER 的具体语法随场景（全库/表空间/时间点）而变，演练前先做全备。"
+              "notes": "把握一般：本条是演练清单不是单条可执行 SQL，RESTORE/RECOVER 的具体语法随场景（全库/表空间/时间点）而变，演练前先做全备。",
+              "id": "oracle-048"
             }
           ]
         },
@@ -593,7 +641,8 @@
                 "<schema>",
                 "<table_name>"
               ],
-              "notes": "超过 UNDO 保留期会报 ORA-01555；闪回查询只能读，不能直接 UPDATE 回去，要恢复需 INSERT SELECT。"
+              "notes": "超过 UNDO 保留期会报 ORA-01555；闪回查询只能读，不能直接 UPDATE 回去，要恢复需 INSERT SELECT。",
+              "id": "oracle-049"
             },
             {
               "title": "闪回表（FLASHBACK TABLE）",
@@ -606,7 +655,8 @@
                 "<table_name>",
                 "<yyyy-mm-dd hh24:mi:ss>"
               ],
-              "notes": "DANGER：需先 ENABLE ROW MOVEMENT；闪回表会回退该时间点之后的所有 DML，执行前先闪回查询确认数据。"
+              "notes": "DANGER：需先 ENABLE ROW MOVEMENT；闪回表会回退该时间点之后的所有 DML，执行前先闪回查询确认数据。",
+              "id": "oracle-050"
             },
             {
               "title": "RMAN 表级 PITR",
@@ -620,7 +670,8 @@
                 "<yyyy-mm-dd hh24:mi:ss>",
                 "<aux_dir>"
               ],
-              "notes": "仅 12c+ 支持，11g 跑会报错；AUXILIARY DESTINATION 需有足够空间放辅助实例，恢复耗时按表大小估算。"
+              "notes": "仅 12c+ 支持，11g 跑会报错；AUXILIARY DESTINATION 需有足够空间放辅助实例，恢复耗时按表大小估算。",
+              "id": "oracle-051"
             },
             {
               "title": "块损坏 BMR 恢复",
@@ -632,7 +683,8 @@
                 "<file#>",
                 "<block#>"
               ],
-              "notes": "DANGER：v$database_block_corruption 为空不代表没坏块，要 VALIDATE 才准；BLOCKRECOVER 需 RMAN 备份，没有备份无法恢复。"
+              "notes": "DANGER：v$database_block_corruption 为空不代表没坏块，要 VALIDATE 才准；BLOCKRECOVER 需 RMAN 备份，没有备份无法恢复。",
+              "id": "oracle-052"
             }
           ]
         }
@@ -654,7 +706,8 @@
                 "<db_name>",
                 "<inst_name>"
               ],
-              "notes": "gv$instance 需 RAC 环境，单机跑只有一行；crsctl/srvctl 需 grid 用户权限。"
+              "notes": "gv$instance 需 RAC 环境，单机跑只有一行；crsctl/srvctl 需 grid 用户权限。",
+              "id": "oracle-053"
             },
             {
               "title": "RAC 互联 / 心跳检查",
@@ -663,7 +716,8 @@
               "desc": "oifcfg / 集群日志",
               "sql": "SELECT inst_id, name, ip_address, is_public, source\nFROM   gv$cluster_interconnects\nORDER  BY inst_id;\n\n-- Shell（服务器上执行）：\n-- oifcfg getif\n-- crsctl check cssd\n-- crsctl stat res -t",
               "params": [],
-              "notes": "互联（private）丢包会触发节点驱逐；is_public='NO' 的才是互联，勿把公网 IP 当互联。"
+              "notes": "互联（private）丢包会触发节点驱逐；is_public='NO' 的才是互联，勿把公网 IP 当互联。",
+              "id": "oracle-054"
             },
             {
               "title": "服务切换 / 负载均衡检查",
@@ -674,7 +728,8 @@
               "params": [
                 "<db_name>"
               ],
-              "notes": "dba_services 看的是数据库内服务定义，实际运行状态以 srvctl status 为准；改服务要 srvctl modify，不要直接改表。"
+              "notes": "dba_services 看的是数据库内服务定义，实际运行状态以 srvctl status 为准；改服务要 srvctl modify，不要直接改表。",
+              "id": "oracle-055"
             }
           ]
         },
@@ -688,7 +743,8 @@
               "desc": "v$dataguard_stats",
               "sql": "SELECT name, value, time_computed, datum_time\nFROM   v$dataguard_stats;\n\nSELECT database_role, protection_mode, switchover_status, open_mode\nFROM   v$database;",
               "params": [],
-              "notes": "apply lag 和 transport lag 是两个值，v$dataguard_stats 里分开列；备库查要在备库上执行，主库查不到备库延迟。"
+              "notes": "apply lag 和 transport lag 是两个值，v$dataguard_stats 里分开列；备库查要在备库上执行，主库查不到备库延迟。",
+              "id": "oracle-056"
             },
             {
               "title": "DG 切换演练（Switchover）",
@@ -697,7 +753,8 @@
               "desc": "演练前停写确认",
               "sql": "-- 第 1 步：先确认可切换（只读，主备都查）：\nSELECT database_role, switchover_status, open_mode\nFROM   v$database;\n\n-- 第 2 步：确认 switchover_status=TO STANDBY / TO PRIMARY 后再执行（DANGER：会切主备角色）：\n-- 主库执行：ALTER DATABASE COMMIT TO SWITCHOVER TO PHYSICAL STANDBY;\n-- 备库执行：ALTER DATABASE COMMIT TO SWITCHOVER TO PRIMARY;\n-- 然后两边分别 SHUTDOWN / STARTUP，按实际演练手册走",
               "params": [],
-              "notes": "DANGER：演练前必须停写确认，switchover_status 不是 TO STANDBY/TO PRIMARY 时不要强行切；RAC 切换步骤与单机不同。"
+              "notes": "DANGER：演练前必须停写确认，switchover_status 不是 TO STANDBY/TO PRIMARY 时不要强行切；RAC 切换步骤与单机不同。",
+              "id": "oracle-057"
             },
             {
               "title": "OGG 抽取 / 投递延迟",
@@ -709,7 +766,8 @@
                 "<extract_name>",
                 "<replicat_name>"
               ],
-              "notes": "把握一般：OGG 不是数据库内置功能，命令在 GGSCI 里执行，LAG 数值单位和版本有关；先确认 OGG 版本和进程名再查。"
+              "notes": "把握一般：OGG 不是数据库内置功能，命令在 GGSCI 里执行，LAG 数值单位和版本有关；先确认 OGG 版本和进程名再查。",
+              "id": "oracle-058"
             },
             {
               "title": "容灾 RPO=0 演练清单",
@@ -718,7 +776,8 @@
               "desc": "按你的银行案例沉淀",
               "sql": "-- 演练前只读检查：\nSELECT database_role, protection_mode, switchover_status FROM v$database;\nSELECT name, value FROM v$dataguard_stats;\n-- LIST BACKUP SUMMARY;  -- RMAN，确认最近全备\n-- 演练清单（只在演练环境执行）：\n-- 1. 确认 DG apply lag = 0、归档无缺口（v$archived_log gap 检查）\n-- 2. 确认 RMAN 最近全备+归档可恢复（VALIDATE DATABASE）\n-- 3. 按演练手册做 Switchover / Failover，记录切换耗时\n-- 4. 切回后确认主备角色、应用连接、数据一致性抽查",
               "params": [],
-              "notes": "把握一般：本条是演练清单，RPO=0 依赖同步模式（MAXIMUM PROTECTION/AVAILABILITY）+网络，清单本身不保证 RPO=0，演练前先核对保护模式。"
+              "notes": "把握一般：本条是演练清单，RPO=0 依赖同步模式（MAXIMUM PROTECTION/AVAILABILITY）+网络，清单本身不保证 RPO=0，演练前先核对保护模式。",
+              "id": "oracle-059"
             }
           ]
         }
@@ -739,7 +798,8 @@
               "params": [
                 "<username>"
               ],
-              "notes": "dba_users/dba_role_privs/dba_sys_privs 均需 DBA 权限；查单个用户时把 <username> 换成大写用户名。"
+              "notes": "dba_users/dba_role_privs/dba_sys_privs 均需 DBA 权限；查单个用户时把 <username> 换成大写用户名。",
+              "id": "oracle-060"
             },
             {
               "title": "密码过期 / 锁定账号",
@@ -748,7 +808,8 @@
               "desc": "dba_users account_status",
               "sql": "SELECT username, account_status, lock_date, expiry_date, profile\nFROM   dba_users\nWHERE  account_status <> 'OPEN'\nORDER  BY username;\n\n-- 即将过期（30 天内）：\nSELECT username, account_status, expiry_date\nFROM   dba_users\nWHERE  expiry_date IS NOT NULL\n  AND  expiry_date < SYSDATE + 30\nORDER  BY expiry_date;",
               "params": [],
-              "notes": "account_status 含 EXPIRED(GRACE) 等多种状态，不等于锁定；解锁用 ALTER USER ... ACCOUNT UNLOCK，属谨慎操作勿批量执行。"
+              "notes": "account_status 含 EXPIRED(GRACE) 等多种状态，不等于锁定；解锁用 ALTER USER ... ACCOUNT UNLOCK，属谨慎操作勿批量执行。",
+              "id": "oracle-061"
             },
             {
               "title": "审计开启与审计日志",
@@ -757,7 +818,8 @@
               "desc": "11g审计 / 12c+统一审计",
               "sql": "-- 1) 查审计开关（SQL*Plus）：\n-- SHOW PARAMETER audit_trail;\n\n-- 2) 11g 传统审计日志（近 1 天，前 50）：\nSELECT username, action_name, timestamp, obj_name, returncode\nFROM   dba_audit_trail\nWHERE  timestamp >= SYSDATE - 1\n  AND  ROWNUM <= 50\nORDER  BY timestamp DESC;\n\n-- 3) 12c+ 统一审计（仅 12c+，11g 跑会报 ORA-00942）：\n-- SELECT dbusername, action_name, event_timestamp, object_name, return_code\n-- FROM   unified_audit_trail\n-- WHERE  event_timestamp >= SYSDATE - 1\n--   AND  ROWNUM <= 50\n-- ORDER  BY event_timestamp DESC;",
               "params": [],
-              "notes": "11g 用 dba_audit_trail，12c+ 推荐 unified_audit_trail；SHOW PARAMETER 是 SQL*Plus 命令，在 JDBC 里跑不了。"
+              "notes": "11g 用 dba_audit_trail，12c+ 推荐 unified_audit_trail；SHOW PARAMETER 是 SQL*Plus 命令，在 JDBC 里跑不了。",
+              "id": "oracle-062"
             }
           ]
         }

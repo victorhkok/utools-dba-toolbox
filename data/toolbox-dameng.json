@@ -17,7 +17,8 @@
               "desc": "SELECT * FROM V$INSTANCE",
               "sql": "SELECT NAME, INSTANCE_NAME, VERSION, STATUS, STARTUP_TIME, MODE$ AS MODE FROM V$INSTANCE;",
               "params": [],
-              "notes": "DM8 视图 V$INSTANCE，需 DBA 或相应查询权限。"
+              "notes": "DM8 视图 V$INSTANCE，需 DBA 或相应查询权限。",
+              "id": "dameng-001"
             },
             {
               "title": "表空间 / 数据文件",
@@ -26,7 +27,8 @@
               "desc": "DBA_TABLESPACES",
               "sql": "SELECT T.TABLESPACE_NAME, T.STATUS, T.CONTENTS, F.FILE_NAME, F.BYTES/1024/1024 AS SIZE_MB, F.AUTOEXTENSIBLE\nFROM DBA_TABLESPACES T LEFT JOIN DBA_DATA_FILES F ON T.TABLESPACE_NAME = F.TABLESPACE_NAME\nORDER BY T.TABLESPACE_NAME, F.FILE_NAME;",
               "params": [],
-              "notes": "DBA_TABLESPACES / DBA_DATA_FILES 为 DM8 兼容 Oracle 的数据字典视图。"
+              "notes": "DBA_TABLESPACES / DBA_DATA_FILES 为 DM8 兼容 Oracle 的数据字典视图。",
+              "id": "dameng-002"
             }
           ]
         }
@@ -45,7 +47,8 @@
               "desc": "V$BUFFERPOOL",
               "sql": "SELECT TOP 20 NAME, (1 - PHYSICAL_READS / NULLIF(GETS, 0)) * 100 AS HIT_RATIO_PCT, GETS, PHYSICAL_READS\nFROM V$BUFFERPOOL\nORDER BY NAME;",
               "params": [],
-              "notes": "V$BUFFERPOOL 列名需在 DM8 实测核对，GETS/PHYSICAL_READS 为 0 时结果为 NULL。"
+              "notes": "V$BUFFERPOOL 列名需在 DM8 实测核对，GETS/PHYSICAL_READS 为 0 时结果为 NULL。",
+              "id": "dameng-003"
             },
             {
               "title": "统计信息收集",
@@ -63,7 +66,8 @@
                   "desc": "表名"
                 }
               ],
-              "notes": "DM8 的 DBMS_STATS 与 Oracle 兼容，但参数细节需在 DM8 实测核对。"
+              "notes": "DM8 的 DBMS_STATS 与 Oracle 兼容，但参数细节需在 DM8 实测核对。",
+              "id": "dameng-004"
             }
           ]
         }
@@ -82,7 +86,8 @@
               "desc": "V$SQL",
               "sql": "SELECT TOP 20 SQL_TEXT, ELAPSED_TIME, EXECUTIONS, ROWS_PROCESSED\nFROM V$SQL\nWHERE ELAPSED_TIME > 0\nORDER BY ELAPSED_TIME DESC;",
               "params": [],
-              "notes": "V$SQL 在 DM8 中的列名（ELAPSED_TIME/ROWS_PROCESSED）需在 DM8 实测核对。"
+              "notes": "V$SQL 在 DM8 中的列名（ELAPSED_TIME/ROWS_PROCESSED）需在 DM8 实测核对。",
+              "id": "dameng-005"
             },
             {
               "title": "执行计划（EXPLAIN）",
@@ -100,7 +105,8 @@
                   "desc": "WHERE 条件"
                 }
               ],
-              "notes": "DM8 支持 EXPLAIN，输出格式与 Oracle 的 DBMS_XPLAN 不同，需在 DM8 实测核对。"
+              "notes": "DM8 支持 EXPLAIN，输出格式与 Oracle 的 DBMS_XPLAN 不同，需在 DM8 实测核对。",
+              "id": "dameng-006"
             }
           ]
         }
@@ -119,7 +125,8 @@
               "desc": "V$LOCK / V$SESSIONS",
               "sql": "SELECT TOP 20 L.SESS_ID AS BLOCKED_SESS, L.TRX_ID, S.USERNAME, S.CLIENT_IP, S.SQL_TEXT\nFROM V$LOCK L JOIN V$SESSIONS S ON L.SESS_ID = S.SESS_ID\nWHERE L.BLOCKED = 1\nORDER BY L.SESS_ID;",
               "params": [],
-              "notes": "V$LOCK/V$SESSIONS 的阻塞标志列名需在 DM8 实测核对，如无 BLOCKED 列请改查 V$LOCK 全量。"
+              "notes": "V$LOCK/V$SESSIONS 的阻塞标志列名需在 DM8 实测核对，如无 BLOCKED 列请改查 V$LOCK 全量。",
+              "id": "dameng-007"
             },
             {
               "title": "杀会话",
@@ -133,7 +140,8 @@
                   "desc": "会话 ID"
                 }
               ],
-              "notes": "SP_CLOSE_SESSION 需 DBA 权限，杀会话前务必确认业务影响。"
+              "notes": "SP_CLOSE_SESSION 需 DBA 权限，杀会话前务必确认业务影响。",
+              "id": "dameng-008"
             }
           ]
         }
@@ -152,7 +160,8 @@
               "desc": "DBA_DATA_FILES",
               "sql": "SELECT TOP 20 T.TABLESPACE_NAME, ROUND(SUM(F.BYTES)/1024/1024, 2) AS TOTAL_MB,\n  ROUND((SUM(F.BYTES) - MAX(NVL(FREE.BYTES, 0)))/1024/1024, 2) AS USED_MB,\n  ROUND((1 - MAX(NVL(FREE.BYTES, 0))/SUM(F.BYTES)) * 100, 2) AS USED_PCT\nFROM DBA_DATA_FILES F\nJOIN DBA_TABLESPACES T ON F.TABLESPACE_NAME = T.TABLESPACE_NAME\nLEFT JOIN (SELECT TABLESPACE_NAME, SUM(BYTES) BYTES FROM DBA_FREE_SPACE GROUP BY TABLESPACE_NAME) FREE\n  ON FREE.TABLESPACE_NAME = T.TABLESPACE_NAME\nGROUP BY T.TABLESPACE_NAME\nORDER BY USED_PCT DESC;",
               "params": [],
-              "notes": "DBA_FREE_SPACE 在 DM8 中的列名需在 DM8 实测核对，>85% 预警。"
+              "notes": "DBA_FREE_SPACE 在 DM8 中的列名需在 DM8 实测核对，>85% 预警。",
+              "id": "dameng-009"
             },
             {
               "title": "大表 Top",
@@ -161,7 +170,8 @@
               "desc": "DBA_SEGMENTS",
               "sql": "SELECT TOP 20 OWNER, SEGMENT_NAME, SEGMENT_TYPE, ROUND(BYTES/1024/1024, 2) AS SIZE_MB\nFROM DBA_SEGMENTS\nORDER BY BYTES DESC;",
               "params": [],
-              "notes": "DBA_SEGMENTS 为 DM8 兼容 Oracle 的数据字典视图。"
+              "notes": "DBA_SEGMENTS 为 DM8 兼容 Oracle 的数据字典视图。",
+              "id": "dameng-010"
             }
           ]
         }
@@ -189,7 +199,8 @@
                   "desc": "备份集目录"
                 }
               ],
-              "notes": "DMRMAN 备份命令语法需按 DM8 版本核对，备份前确认备份目录磁盘余量。"
+              "notes": "DMRMAN 备份命令语法需按 DM8 版本核对，备份前确认备份目录磁盘余量。",
+              "id": "dameng-011"
             },
             {
               "title": "闪回 / 时间点恢复",
@@ -207,7 +218,8 @@
                   "desc": "恢复目标时间"
                 }
               ],
-              "notes": "DMRMAN RESTORE 语法与 UNTIL 子句需在 DM8 实测核对，生产恢复前务必先停写并做副本。"
+              "notes": "DMRMAN RESTORE 语法与 UNTIL 子句需在 DM8 实测核对，生产恢复前务必先停写并做副本。",
+              "id": "dameng-012"
             }
           ]
         }
@@ -226,7 +238,8 @@
               "desc": "V$DMWATCHER",
               "sql": "SELECT TOP 20 * FROM V$DMWATCHER;",
               "params": [],
-              "notes": "V$DMWATCHER 的列名与返回值需在 DM8 实测核对，未部署数据守护时该视图可能无数据。"
+              "notes": "V$DMWATCHER 的列名与返回值需在 DM8 实测核对，未部署数据守护时该视图可能无数据。",
+              "id": "dameng-013"
             },
             {
               "title": "DSC 集群状态",
@@ -235,7 +248,8 @@
               "desc": "DMASM",
               "sql": "-- shell: DMASM / DSC 集群状态以 DMASM 工具与 dmsvc 进程为准\n-- shell: ps -ef | grep dmasm\n-- shell: dmasm --help\nSELECT NAME, INSTANCE_NAME, STATUS FROM V$INSTANCE;",
               "params": [],
-              "notes": "DMASM/DSC 的状态查询方式需在 DM8 DSC 环境实测核对，不要凭印象执行集群命令。"
+              "notes": "DMASM/DSC 的状态查询方式需在 DM8 DSC 环境实测核对，不要凭印象执行集群命令。",
+              "id": "dameng-014"
             }
           ]
         }
@@ -259,7 +273,8 @@
                   "desc": "源模式名"
                 }
               ],
-              "notes": "迁移以 DM 官方 DTS 工具为准，数据类型映射（NUMBER/VARCHAR2 等）需逐项核对。"
+              "notes": "迁移以 DM 官方 DTS 工具为准，数据类型映射（NUMBER/VARCHAR2 等）需逐项核对。",
+              "id": "dameng-015"
             },
             {
               "title": "兼容性检查（方言差异）",
@@ -268,7 +283,8 @@
               "desc": "NVL/ROWNUM 等",
               "sql": "-- 检查源库中 DM 不完全兼容的写法（在 Oracle 源库或迁移评估库执行）：\nSELECT TOP 20 OWNER, NAME, TYPE, LINE, TEXT FROM DBA_SOURCE\nWHERE TEXT LIKE '%ROWNUM%' OR TEXT LIKE '%NVL(%' OR TEXT LIKE '%SYSDATE%'\nORDER BY OWNER, NAME, LINE;",
               "params": [],
-              "notes": "DBA_SOURCE 的列名需在 DM8 实测核对，ROWNUM/NVL/SYSDATE 在 DM8 多数兼容但仍需逐项核对。"
+              "notes": "DBA_SOURCE 的列名需在 DM8 实测核对，ROWNUM/NVL/SYSDATE 在 DM8 多数兼容但仍需逐项核对。",
+              "id": "dameng-016"
             }
           ]
         }

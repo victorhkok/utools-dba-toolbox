@@ -17,7 +17,8 @@
               "desc": "gcadmin",
               "sql": "-- shell: gcadmin（GBase 8a 集群管理命令）\n-- shell: gcadmin showcluster\n-- shell: gcadmin showdistribution",
               "params": [],
-              "notes": "gcadmin 需在 8a 协调节点上执行，输出以 gcadmin 为准。"
+              "notes": "gcadmin 需在 8a 协调节点上执行，输出以 gcadmin 为准。",
+              "id": "gbase-001"
             },
             {
               "title": "实例状态（8s）",
@@ -26,7 +27,8 @@
               "desc": "onstat",
               "sql": "-- shell: onstat（GBase 8s / Informix 兼容命令）\n-- shell: onstat -\n-- shell: onstat -g ses",
               "params": [],
-              "notes": "onstat 需在 8s 实例所在服务器执行，参数需按 8s 版本核对。"
+              "notes": "onstat 需在 8s 实例所在服务器执行，参数需按 8s 版本核对。",
+              "id": "gbase-002"
             }
           ]
         }
@@ -45,7 +47,8 @@
               "desc": "数据分布",
               "sql": "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_ROWS FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','performance_schema') ORDER BY TABLE_ROWS DESC LIMIT 20;\n-- 分布键与倾斜详情以 8a 的分布信息表为准，系统表名按版本不同，需在 8a 实测核对，不要硬编。",
               "params": [],
-              "notes": "8a 分布信息系统表名需在 8a 实测核对，本条只给通用表大小查询。"
+              "notes": "8a 分布信息系统表名需在 8a 实测核对，本条只给通用表大小查询。",
+              "id": "gbase-003"
             },
             {
               "title": "统计信息 / 优化器",
@@ -59,7 +62,8 @@
                   "desc": "表名"
                 }
               ],
-              "notes": "8a 的统计信息收集语法需在 8a 实测核对，ANALYZE 模板仅供参考。"
+              "notes": "8a 的统计信息收集语法需在 8a 实测核对，ANALYZE 模板仅供参考。",
+              "id": "gbase-004"
             }
           ]
         }
@@ -78,7 +82,8 @@
               "desc": "系统表 / 日志",
               "sql": "-- 8a/8s 的慢 SQL 以慢查询日志与系统表为准，系统表名按版本不同：\n-- shell: 查看 8a 慢查询日志路径与配置（gbase 配置文件），再用文本工具分析\n-- 需在 8a/8s 实测核对慢 SQL 系统表名后再填具体查询，不要硬编。",
               "params": [],
-              "notes": "8a/8s 慢 SQL 系统表名需在 8a/8s 实测核对，本条暂不编造系统表。"
+              "notes": "8a/8s 慢 SQL 系统表名需在 8a/8s 实测核对，本条暂不编造系统表。",
+              "id": "gbase-005"
             },
             {
               "title": "执行计划",
@@ -96,7 +101,8 @@
                   "desc": "WHERE 条件"
                 }
               ],
-              "notes": "8a 与 8s 的 EXPLAIN 输出格式不同，需按版本核对。"
+              "notes": "8a 与 8s 的 EXPLAIN 输出格式不同，需按版本核对。",
+              "id": "gbase-006"
             }
           ]
         }
@@ -120,7 +126,8 @@
                   "desc": "备份目标目录"
                 }
               ],
-              "notes": "gcbackup 参数需在 8a 实测核对，备份前确认磁盘余量与集群状态。"
+              "notes": "gcbackup 参数需在 8a 实测核对，备份前确认磁盘余量与集群状态。",
+              "id": "gbase-007"
             },
             {
               "title": "8s 逻辑备份（dbexport）",
@@ -138,7 +145,8 @@
                   "desc": "备份目标目录"
                 }
               ],
-              "notes": "dbexport 参数需在 8s 实测核对，备份前确认磁盘余量。"
+              "notes": "dbexport 参数需在 8s 实测核对，备份前确认磁盘余量。",
+              "id": "gbase-008"
             }
           ]
         }
@@ -157,7 +165,8 @@
               "desc": "迁移工具 / 类型映射",
               "sql": "-- 迁移前检查（只读，通用）：\nSELECT TABLE_SCHEMA, COUNT(*) AS TABLE_CNT FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','performance_schema','mysql','sys') GROUP BY TABLE_SCHEMA ORDER BY TABLE_CNT DESC LIMIT 20;\n-- 数据类型映射、分布键选择、字符集需以 GBase 迁移工具评估报告为准。",
               "params": [],
-              "notes": "迁移工具与类型映射需按 8a/8s 版本核对，分布键选择是 8a 迁移的关键。"
+              "notes": "迁移工具与类型映射需按 8a/8s 版本核对，分布键选择是 8a 迁移的关键。",
+              "id": "gbase-009"
             }
           ]
         }

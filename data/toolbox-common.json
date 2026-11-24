@@ -17,7 +17,8 @@
               "desc": "v0.1 已做",
               "sql": "见插件内置：lib/sql-core.js formatSql",
               "params": [],
-              "notes": "v0.1 插件已实现，本地运行不联网，见 lib/sql-core.js。"
+              "notes": "v0.1 插件已实现，本地运行不联网，见 lib/sql-core.js。",
+              "id": "common-001"
             },
             {
               "title": "方言互转 Oracle↔MySQL",
@@ -26,7 +27,8 @@
               "desc": "v0.1 已做，规则式",
               "sql": "见插件内置：lib/sql-core.js convertDialect",
               "params": [],
-              "notes": "v0.1 插件已实现，规则式互转非完整转译，上线前需在测试库跑一遍。"
+              "notes": "v0.1 插件已实现，规则式互转非完整转译，上线前需在测试库跑一遍。",
+              "id": "common-002"
             },
             {
               "title": "SQL 脱敏",
@@ -35,7 +37,8 @@
               "desc": "v0.1 已做",
               "sql": "见插件内置：lib/sql-core.js desensitizeSql",
               "params": [],
-              "notes": "v0.1 插件已实现，字符串→***、数字→?。"
+              "notes": "v0.1 插件已实现，字符串→***、数字→?。",
+              "id": "common-003"
             },
             {
               "title": "列表转 IN / 批量 INSERT",
@@ -44,7 +47,8 @@
               "desc": "v0.1 已做",
               "sql": "见插件内置：lib/sql-core.js listToIn",
               "params": [],
-              "notes": "v0.1 插件已实现，Oracle IN 超 1000 个会报 ORA-01795。"
+              "notes": "v0.1 插件已实现，Oracle IN 超 1000 个会报 ORA-01795。",
+              "id": "common-004"
             },
             {
               "title": "时间戳互转",
@@ -53,7 +57,8 @@
               "desc": "v0.1 已做",
               "sql": "见插件内置：lib/sql-core.js timestampConvert",
               "params": [],
-              "notes": "v0.1 插件已实现，10 位秒/13 位毫秒与日期互转。"
+              "notes": "v0.1 插件已实现，10 位秒/13 位毫秒与日期互转。",
+              "id": "common-005"
             }
           ]
         }
@@ -77,7 +82,8 @@
                   "desc": "地址与库名"
                 }
               ],
-              "notes": "端口与驱动名需按实际版本核对，连接串不要写真实密码。"
+              "notes": "端口与驱动名需按实际版本核对，连接串不要写真实密码。",
+              "id": "common-006"
             },
             {
               "title": "端口 / 连通性检查",
@@ -95,7 +101,8 @@
                   "desc": "端口"
                 }
               ],
-              "notes": "常用端口：Oracle 1521、MySQL/TiDB 3306/4000、PG 5432、SQL Server 1433、DM 5236、OB 2883、Redis 6379。"
+              "notes": "常用端口：Oracle 1521、MySQL/TiDB 3306/4000、PG 5432、SQL Server 1433、DM 5236、OB 2883、Redis 6379。",
+              "id": "common-007"
             },
             {
               "title": "字符集 / 时区检查",
@@ -104,7 +111,8 @@
               "desc": "各库字符集查询",
               "sql": "-- Oracle: SELECT * FROM NLS_DATABASE_PARAMETERS WHERE PARAMETER IN ('NLS_CHARACTERSET','NLS_NCHAR_CHARACTERSET');\n-- MySQL: SHOW VARIABLES LIKE 'character_set%'; SHOW VARIABLES LIKE 'time_zone';\n-- PostgreSQL: SHOW server_encoding; SHOW timezone;\n-- SQL Server: SELECT SERVERPROPERTY('Collation');\n-- 达梦: SELECT * FROM V$PARAMETER WHERE NAME LIKE '%CHARSET%';\n-- TiDB: SHOW VARIABLES LIKE 'character_set%';",
               "params": [],
-              "notes": "各库字符集查询语法不同，达梦条需在 DM8 实测核对。"
+              "notes": "各库字符集查询语法不同，达梦条需在 DM8 实测核对。",
+              "id": "common-008"
             }
           ]
         }
@@ -128,7 +136,8 @@
                   "desc": "Redis 地址"
                 }
               ],
-              "notes": "二期，Redis 6.x/7.x 示例命令，需按版本核对。"
+              "notes": "二期，Redis 6.x/7.x 示例命令，需按版本核对。",
+              "id": "common-009"
             },
             {
               "title": "MongoDB 慢查询 / 索引",
@@ -142,7 +151,8 @@
                   "desc": "集合名"
                 }
               ],
-              "notes": "二期，MongoDB 6.x/7.x 示例命令，需按版本核对。"
+              "notes": "二期，MongoDB 6.x/7.x 示例命令，需按版本核对。",
+              "id": "common-010"
             },
             {
               "title": "SQLite 常用命令",
@@ -156,7 +166,8 @@
                   "desc": "库文件与表名"
                 }
               ],
-              "notes": "二期，SQLite 3.x 示例命令，需按版本核对。"
+              "notes": "二期，SQLite 3.x 示例命令，需按版本核对。",
+              "id": "common-011"
             }
           ]
         }
